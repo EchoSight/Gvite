@@ -35,6 +35,9 @@ const DEFAULT_GRID_SIZE = 40;
 const DEFAULT_FT_PER_CELL = 5;
 const DEFAULT_VISION_CELLS = 12; // 12 cells = 60ft default vision
 const DEFAULT_GRID_OFFSET = { x: 0, y: 0 };
+const MIN_ZOOM = 0.2;
+const MAX_ZOOM = 5;
+const ZOOM_STEP = 0.2;
 
 export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
   const { isDM } = useGame();
@@ -163,11 +166,17 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
     setGridOffset(DEFAULT_GRID_OFFSET);
   }, []);
 
+  const clampZoom = useCallback((value: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value)), []);
+
+  const handleZoomChange = useCallback((value: number) => {
+    setZoom(clampZoom(value));
+  }, [clampZoom]);
+
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoom(z => Math.max(0.2, Math.min(5, z + delta)));
-  }, []);
+    setZoom(current => clampZoom(current + delta));
+  }, [clampZoom]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (draggingToken || obstacleTool) return;
@@ -372,16 +381,29 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Toolbar */}
         <div className="flex items-center gap-1 p-2 bg-card border-b border-border flex-wrap shrink-0">
-          <button onClick={() => setZoom(z => Math.min(5, z + 0.2))} className="tactical-card !p-1 px-2" title="Zoom in">
+          <button onClick={() => handleZoomChange(zoom + ZOOM_STEP)} className="tactical-card !p-1 px-2" title="Make map bigger">
             <ZoomIn className="w-4 h-4" />
           </button>
-          <button onClick={() => setZoom(z => Math.max(0.2, z - 0.2))} className="tactical-card !p-1 px-2" title="Zoom out">
+          <button onClick={() => handleZoomChange(zoom - ZOOM_STEP)} className="tactical-card !p-1 px-2" title="Make map smaller">
             <ZoomOut className="w-4 h-4" />
           </button>
           <button onClick={resetView} className="tactical-card !p-1 px-2" title="Reset">
             <RotateCcw className="w-4 h-4" />
           </button>
-          <span className="font-mono text-[10px] text-muted-foreground px-1">{Math.round(zoom * 100)}%</span>
+          <div className="flex items-center gap-2 px-2 min-w-[170px]">
+            <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold whitespace-nowrap">Map Size</span>
+            <input
+              type="range"
+              min={MIN_ZOOM}
+              max={MAX_ZOOM}
+              step={0.1}
+              value={zoom}
+              onChange={(e) => handleZoomChange(Number(e.target.value))}
+              className="h-1 flex-1 accent-secondary cursor-pointer"
+              aria-label="Adjust map size"
+            />
+            <span className="font-mono text-[10px] text-muted-foreground w-10 text-right">{Math.round(zoom * 100)}%</span>
+          </div>
 
           <div className="w-px h-5 bg-border mx-1" />
 
