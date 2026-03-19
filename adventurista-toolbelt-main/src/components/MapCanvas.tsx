@@ -668,7 +668,6 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
               tool={obstacleTool}
               imgSize={imgSize}
               zoom={zoom}
-              pan={pan}
               isDM={isDM}
               showForPlayer={showPlayerPreview}
             />

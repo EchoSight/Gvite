@@ -9,7 +9,6 @@ interface ObstacleLayerProps {
   tool: ObstacleTool;
   imgSize: { w: number; h: number };
   zoom: number;
-  pan: { x: number; y: number };
   isDM: boolean;
   showForPlayer?: boolean; // DM preview mode
 }
@@ -24,14 +23,14 @@ interface DragState {
 }
 
 export function ObstacleLayer({
-  obstacles, setObstacles, tool, imgSize, zoom, pan, isDM, showForPlayer,
+  obstacles, setObstacles, tool, imgSize, zoom, isDM, showForPlayer,
 }: ObstacleLayerProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [preview, setPreview] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
-  const toLocal = useCallback((e: React.MouseEvent): { x: number; y: number } => {
+  const toLocal = useCallback((e: React.PointerEvent<SVGSVGElement>): { x: number; y: number } => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const rect = svg.getBoundingClientRect();
@@ -41,9 +40,10 @@ export function ObstacleLayer({
     };
   }, [zoom]);
 
-  const handlePointerDown = useCallback((e: React.MouseEvent) => {
+  const handlePointerDown = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
     if (!isDM || showForPlayer) return;
     e.stopPropagation();
+    svgRef.current?.setPointerCapture?.(e.pointerId);
     const p = toLocal(e);
 
     if (tool === 'line' || tool === 'rect') {
@@ -67,7 +67,7 @@ export function ObstacleLayer({
     }
   }, [isDM, showForPlayer, tool, obstacles, toLocal]);
 
-  const handlePointerMove = useCallback((e: React.MouseEvent) => {
+  const handlePointerMove = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
     if (!dragState) return;
     e.stopPropagation();
     const p = toLocal(e);
@@ -116,9 +116,10 @@ export function ObstacleLayer({
     }
   }, [dragState, toLocal, obstacles, setObstacles]);
 
-  const handlePointerUp = useCallback((e: React.MouseEvent) => {
+  const handlePointerUp = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
     if (!dragState) return;
     e.stopPropagation();
+    svgRef.current?.releasePointerCapture?.(e.pointerId);
 
     if ((dragState.type === 'draw-line' || dragState.type === 'draw-rect') && preview) {
       const dx = preview.x2 - preview.x1;
@@ -188,12 +189,14 @@ export function ObstacleLayer({
         style={{
           pointerEvents: isInteractive ? 'auto' : 'none',
           zIndex: 15,
+          touchAction: 'none',
         }}
         tabIndex={0}
         onKeyDown={handleKeyDown}
-        onMouseDown={handlePointerDown}
-        onMouseMove={handlePointerMove}
-        onMouseUp={handlePointerUp}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
       >
         {/* Render obstacles */}
         {obstacles.map(obs => {
