@@ -1,16 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Character, DND_CLASSES, DND_RACES, ABILITY_NAMES,
-  DndClass, DndRace,
-  AbilityScore, EquipmentItem, CLASS_HIT_DIE, getEquippedAC, getModifier
+  DndClass, DndRace, AbilityName,
+  AbilityScore, EquipmentItem, CLASS_HIT_DIE, applyRaceAbilityBonuses, getEquippedAC, getModifier, getRaceAbilityBonuses, getRaceProfile
 } from '@/lib/types';
 import { addCharacter } from '@/lib/store';
 import { StatBlock } from '@/components/StatBlock';
 import { EquipmentDrawer } from '@/components/EquipmentDrawer';
 import { EquipmentRow } from '@/components/EquipmentRow';
 import { Plus } from 'lucide-react';
+
+const HALF_ELF_ABILITY_OPTIONS = ABILITY_NAMES.filter(name => name !== 'CHA');
 
 export default function CreateCharacter() {
   const navigate = useNavigate();
@@ -21,10 +23,35 @@ export default function CreateCharacter() {
   const [abilities, setAbilities] = useState<AbilityScore[]>(
     ABILITY_NAMES.map(n => ({ name: n, score: 10 }))
   );
+  const [halfElfChoices, setHalfElfChoices] = useState<AbilityName[]>(['STR', 'DEX']);
   const [equipment, setEquipment] = useState<EquipmentItem[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const conMod = getModifier(abilities.find(a => a.name === 'CON')?.score ?? 10);
+  const raceProfile = getRaceProfile(race);
+
+  useEffect(() => {
+    if (race !== 'Half-Elf') return;
+
+    setHalfElfChoices(prev => {
+      const next = [...new Set(prev.filter(choice => choice !== 'CHA'))].slice(0, 2);
+      for (const ability of HALF_ELF_ABILITY_OPTIONS) {
+        if (next.length >= 2) break;
+        if (!next.includes(ability)) next.push(ability);
+      }
+      return next;
+    });
+  }, [race]);
+
+  const raceBonuses = useMemo(
+    () => getRaceAbilityBonuses(race, halfElfChoices),
+    [race, halfElfChoices],
+  );
+  const finalAbilities = useMemo(
+    () => applyRaceAbilityBonuses(abilities, race, halfElfChoices),
+    [abilities, race, halfElfChoices],
+  );
+
+  const conMod = getModifier(finalAbilities.find(a => a.name === 'CON')?.score ?? 10);
   const hitDie = CLASS_HIT_DIE[dndClass];
   const maxHp = hitDie + conMod + (level - 1) * (Math.floor(hitDie / 2) + 1 + conMod);
   const baseAc = getEquippedAC({
@@ -38,7 +65,7 @@ export default function CreateCharacter() {
     maxHp: Math.max(1, maxHp),
     ac: 10,
     speed: 30,
-    abilities,
+    abilities: finalAbilities,
     equipment,
     createdAt: new Date().toISOString(),
   });
@@ -56,7 +83,7 @@ export default function CreateCharacter() {
       maxHp: Math.max(1, maxHp),
       ac: baseAc,
       speed: 30,
-      abilities,
+      abilities: finalAbilities,
       equipment,
       createdAt: new Date().toISOString(),
     };
@@ -64,8 +91,22 @@ export default function CreateCharacter() {
     navigate(`/character/${char.id}`);
   };
 
-  const updateAbility = (name: string, score: number) => {
-    setAbilities(prev => prev.map(a => a.name === name ? { ...a, score } : a));
+  const updateAbility = (name: AbilityName, score: number) => {
+    const racialBonus = raceBonuses[name] ?? 0;
+    const baseScore = Math.max(1, score - racialBonus);
+    setAbilities(prev => prev.map(a => a.name === name ? { ...a, score: baseScore } : a));
+  };
+
+  const updateHalfElfChoice = (index: number, selected: AbilityName) => {
+    setHalfElfChoices(prev => {
+      const next = [...prev];
+      const otherIndex = index === 0 ? 1 : 0;
+      if (next[otherIndex] === selected) {
+        next[otherIndex] = next[index];
+      }
+      next[index] = selected;
+      return next;
+    });
   };
 
   return (
@@ -117,6 +158,45 @@ export default function CreateCharacter() {
         </div>
       </section>
 
+      <section className="mb-4 md:mb-6">
+        <p className="tactical-header mb-3">RACIAL MODIFIERS</p>
+        <div className="tactical-card space-y-3">
+          <div className="flex flex-wrap gap-2 text-xs font-mono text-foreground">
+            {ABILITY_NAMES.map(ability => raceBonuses[ability] ? (
+              <span key={ability} className="rounded border border-border px-2 py-1">
+                {ability} +{raceBonuses[ability]}
+              </span>
+            ) : null)}
+          </div>
+          {race === 'Half-Elf' && raceProfile.flexibleBonuses && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {[0, 1].map(index => (
+                <label key={index} className="block">
+                  <span className="stat-label block mb-2">HALF-ELF BONUS {index + 1}</span>
+                  <select
+                    value={halfElfChoices[index]}
+                    onChange={e => updateHalfElfChoice(index, e.target.value as AbilityName)}
+                    className="w-full bg-transparent font-mono text-sm text-foreground outline-none border border-border rounded-sm px-2 py-2"
+                  >
+                    {HALF_ELF_ABILITY_OPTIONS.map(option => (
+                      <option key={option} value={option} className="bg-card">{option}</option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+          )}
+          <div>
+            <p className="stat-label mb-2">TRAITS</p>
+            <div className="flex flex-wrap gap-2 text-xs font-mono text-muted-foreground">
+              {raceProfile.traits.map(trait => (
+                <span key={trait} className="rounded border border-border px-2 py-1">{trait}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Computed Stats */}
       <section className="mb-4 md:mb-6">
         <p className="tactical-header mb-3">COMPUTED</p>
@@ -140,7 +220,7 @@ export default function CreateCharacter() {
       <section className="mb-4 md:mb-6">
         <p className="tactical-header mb-3">ABILITY SCORES</p>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
-          {abilities.map(ab => (
+          {finalAbilities.map(ab => (
             <StatBlock
               key={ab.name}
               ability={ab}
