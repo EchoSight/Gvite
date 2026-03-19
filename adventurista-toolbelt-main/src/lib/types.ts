@@ -11,8 +11,18 @@ export type DndClass =
   | 'Rogue' | 'Sorcerer' | 'Warlock' | 'Wizard';
 
 export type DndRace = 
-  | 'Human' | 'Elf' | 'Dwarf' | 'Halfling' 
-  | 'Gnome' | 'Half-Elf' | 'Half-Orc' | 'Tiefling' | 'Dragonborn';
+  | 'Human' | 'Elf' | 'High Elf' | 'Wood Elf' | 'Dwarf' | 'Hill Dwarf' | 'Mountain Dwarf'
+  | 'Halfling' | 'Lightfoot' | 'Stout' | 'Gnome' | 'Half-Elf' | 'Half-Orc' | 'Tiefling' | 'Dragonborn';
+
+export interface RaceProfile {
+  bonuses: Partial<Record<AbilityName, number>>;
+  traits: string[];
+  flexibleBonuses?: {
+    count: number;
+    amount: number;
+    excluded?: AbilityName[];
+  };
+}
 
 export interface EquipmentItem {
   id: string;
@@ -69,10 +79,115 @@ export const DND_CLASSES: DndClass[] = [
 ];
 
 export const DND_RACES: DndRace[] = [
-  'Human','Elf','Dwarf','Halfling','Gnome','Half-Elf','Half-Orc','Tiefling','Dragonborn'
+  'Human', 'Elf', 'High Elf', 'Wood Elf', 'Dwarf', 'Hill Dwarf', 'Mountain Dwarf',
+  'Halfling', 'Lightfoot', 'Stout', 'Dragonborn', 'Tiefling', 'Half-Orc', 'Gnome', 'Half-Elf',
 ];
 
 export const ABILITY_NAMES: AbilityName[] = ['STR','DEX','CON','INT','WIS','CHA'];
+
+export const RACE_PROFILES: Record<DndRace, RaceProfile> = {
+  Human: {
+    bonuses: { STR: 1, DEX: 1, CON: 1, INT: 1, WIS: 1, CHA: 1 },
+    traits: ['Versatile'],
+  },
+  Elf: {
+    bonuses: { DEX: 2 },
+    traits: ['Darkvision', 'Keen Senses'],
+  },
+  'High Elf': {
+    bonuses: { DEX: 2, INT: 1 },
+    traits: ['Darkvision', 'Keen Senses', 'Cantrip'],
+  },
+  'Wood Elf': {
+    bonuses: { DEX: 2, WIS: 1 },
+    traits: ['Darkvision', 'Keen Senses', 'Speed'],
+  },
+  Dwarf: {
+    bonuses: { CON: 2 },
+    traits: ['Resilience'],
+  },
+  'Hill Dwarf': {
+    bonuses: { CON: 2, WIS: 1 },
+    traits: ['Resilience', 'Extra HP'],
+  },
+  'Mountain Dwarf': {
+    bonuses: { STR: 2, CON: 2 },
+    traits: ['Resilience', 'Armour'],
+  },
+  Halfling: {
+    bonuses: { DEX: 2 },
+    traits: ['Lucky'],
+  },
+  Lightfoot: {
+    bonuses: { DEX: 2, CHA: 1 },
+    traits: ['Lucky', 'Stealth'],
+  },
+  Stout: {
+    bonuses: { DEX: 2, CON: 1 },
+    traits: ['Lucky', 'Poison resist'],
+  },
+  Dragonborn: {
+    bonuses: { STR: 2, CHA: 1 },
+    traits: ['Breath weapon'],
+  },
+  Tiefling: {
+    bonuses: { INT: 1, CHA: 2 },
+    traits: ['Fire resist'],
+  },
+  'Half-Orc': {
+    bonuses: { STR: 2, CON: 1 },
+    traits: ['Relentless Endurance'],
+  },
+  Gnome: {
+    bonuses: { INT: 2 },
+    traits: ['Cunning'],
+  },
+  'Half-Elf': {
+    bonuses: { CHA: 2 },
+    flexibleBonuses: { count: 2, amount: 1, excluded: ['CHA'] },
+    traits: ['Flexible'],
+  },
+};
+
+export function getRaceProfile(race: DndRace): RaceProfile {
+  return RACE_PROFILES[race];
+}
+
+export function getRaceAbilityBonuses(
+  race: DndRace,
+  flexibleChoices: AbilityName[] = [],
+): Partial<Record<AbilityName, number>> {
+  const profile = getRaceProfile(race);
+  const bonuses = { ...profile.bonuses };
+
+  if (!profile.flexibleBonuses) {
+    return bonuses;
+  }
+
+  const { amount, count, excluded = [] } = profile.flexibleBonuses;
+  const uniqueChoices = [...new Set(flexibleChoices)]
+    .filter(choice => !excluded.includes(choice))
+    .slice(0, count);
+
+  for (const ability of uniqueChoices) {
+    bonuses[ability] = (bonuses[ability] ?? 0) + amount;
+  }
+
+  return bonuses;
+}
+
+export function applyRaceAbilityBonuses(
+  abilities: AbilityScore[],
+  race: DndRace,
+  flexibleChoices: AbilityName[] = [],
+): AbilityScore[] {
+  const bonuses = getRaceAbilityBonuses(race, flexibleChoices);
+
+  return abilities.map(ability => ({
+    ...ability,
+    score: ability.score + (bonuses[ability.name] ?? 0),
+  }));
+}
 
 export function getModifier(score: number): number {
   return Math.floor((score - 10) / 2);
