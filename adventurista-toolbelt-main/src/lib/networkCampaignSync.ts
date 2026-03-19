@@ -40,7 +40,7 @@ export class NetworkCampaignClient {
   private readonly listeners = new Set<CampaignEventCallback>();
 
   constructor(private readonly options: HostConnectionOptions) {
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = (options.fetchImpl ?? globalThis.fetch).bind(globalThis);
     this.wsFactory = options.webSocketFactory;
   }
 
