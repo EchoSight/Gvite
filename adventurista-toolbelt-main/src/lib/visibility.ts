@@ -55,9 +55,10 @@ export function isCellVisible(
   col: number, row: number, gridSize: number,
   viewers: { x: number; y: number; visionRadius: number }[],
   obstacles: Obstacle[],
+  gridOffset: { x: number; y: number } = { x: 0, y: 0 },
 ): boolean {
-  const cx = col * gridSize + gridSize / 2;
-  const cy = row * gridSize + gridSize / 2;
+  const cx = gridOffset.x + col * gridSize + gridSize / 2;
+  const cy = gridOffset.y + row * gridSize + gridSize / 2;
   return isVisible(cx, cy, viewers, obstacles);
 }
 

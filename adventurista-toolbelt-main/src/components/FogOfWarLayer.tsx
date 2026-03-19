@@ -7,6 +7,7 @@ interface FogOfWarLayerProps {
   gridCols: number;
   gridRows: number;
   imgSize: { w: number; h: number };
+  gridOffset: { x: number; y: number };
   viewers: { x: number; y: number; visionRadius: number }[];
   obstacles: Obstacle[];
   isDM: boolean;
@@ -14,19 +15,19 @@ interface FogOfWarLayerProps {
 }
 
 export function FogOfWarLayer({
-  gridSize, gridCols, gridRows, viewers, obstacles, isDM, showPlayerPreview,
+  gridSize, gridCols, gridRows, viewers, obstacles, isDM, showPlayerPreview, gridOffset,
 }: FogOfWarLayerProps) {
   const visibleCells = useMemo(() => {
     const visible = new Set<string>();
     for (let r = 0; r < gridRows; r++) {
       for (let c = 0; c < gridCols; c++) {
-        if (isCellVisible(c, r, gridSize, viewers, obstacles)) {
+        if (isCellVisible(c, r, gridSize, viewers, obstacles, gridOffset)) {
           visible.add(`${c},${r}`);
         }
       }
     }
     return visible;
-  }, [gridSize, gridCols, gridRows, viewers, obstacles]);
+  }, [gridSize, gridCols, gridRows, viewers, obstacles, gridOffset]);
 
   // DM sees everything unless previewing player vision
   const showFog = !isDM || showPlayerPreview;
@@ -44,8 +45,8 @@ export function FogOfWarLayer({
               key={key}
               className="absolute"
               style={{
-                left: col * gridSize,
-                top: row * gridSize,
+                left: gridOffset.x + col * gridSize,
+                top: gridOffset.y + row * gridSize,
                 width: gridSize,
                 height: gridSize,
                 backgroundColor: showPlayerPreview
