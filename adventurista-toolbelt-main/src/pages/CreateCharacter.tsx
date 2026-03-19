@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Character, DND_CLASSES, DND_RACES, ABILITY_NAMES,
-  AbilityScore, EquipmentItem, CLASS_HIT_DIE, getModifier
+  DndClass, DndRace,
+  AbilityScore, EquipmentItem, CLASS_HIT_DIE, getEquippedAC, getModifier
 } from '@/lib/types';
 import { addCharacter } from '@/lib/store';
 import { StatBlock } from '@/components/StatBlock';
@@ -26,7 +27,21 @@ export default function CreateCharacter() {
   const conMod = getModifier(abilities.find(a => a.name === 'CON')?.score ?? 10);
   const hitDie = CLASS_HIT_DIE[dndClass];
   const maxHp = hitDie + conMod + (level - 1) * (Math.floor(hitDie / 2) + 1 + conMod);
-  const baseAc = 10 + getModifier(abilities.find(a => a.name === 'DEX')?.score ?? 10);
+  const baseAc = getEquippedAC({
+    id: 'preview',
+    name: 'Preview',
+    race,
+    class: dndClass,
+    level,
+    xp: 0,
+    hp: Math.max(1, maxHp),
+    maxHp: Math.max(1, maxHp),
+    ac: 10,
+    speed: 30,
+    abilities,
+    equipment,
+    createdAt: new Date().toISOString(),
+  });
 
   const handleCreate = () => {
     if (!name.trim()) return;
@@ -75,7 +90,7 @@ export default function CreateCharacter() {
             <label className="stat-label block mb-2">RACE</label>
             <select
               value={race}
-              onChange={e => setRace(e.target.value as any)}
+              onChange={e => setRace(e.target.value as DndRace)}
               className="w-full bg-transparent font-mono text-sm text-foreground outline-none"
             >
               {DND_RACES.map(r => <option key={r} value={r} className="bg-card">{r}</option>)}
@@ -85,7 +100,7 @@ export default function CreateCharacter() {
             <label className="stat-label block mb-2">CLASS</label>
             <select
               value={dndClass}
-              onChange={e => setDndClass(e.target.value as any)}
+              onChange={e => setDndClass(e.target.value as DndClass)}
               className="w-full bg-transparent font-mono text-sm text-foreground outline-none"
             >
               {DND_CLASSES.map(c => <option key={c} value={c} className="bg-card">{c}</option>)}

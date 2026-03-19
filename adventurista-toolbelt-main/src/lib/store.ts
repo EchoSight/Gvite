@@ -1,11 +1,16 @@
-import { Character, CampaignResource } from './types';
+import { Character, CampaignResource, getEquippedAC } from './types';
 
 const CHARACTERS_KEY = 'dnd_characters';
 const RESOURCES_KEY = 'dnd_resources';
 
 export function getCharacters(): Character[] {
   const data = localStorage.getItem(CHARACTERS_KEY);
-  return data ? JSON.parse(data) : [];
+  if (!data) return [];
+  const parsed = JSON.parse(data) as Character[];
+  return parsed.map(character => ({
+    ...character,
+    ac: getEquippedAC(character),
+  }));
 }
 
 export function saveCharacters(chars: Character[]) {

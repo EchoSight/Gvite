@@ -13,7 +13,17 @@ import {
 } from 'lucide-react';
 import { MapToken } from './MapCanvas';
 import { getCharacters } from '@/lib/store';
-import { getModifier, getEquippedAC, getEquippedWeapons, EquipmentItem } from '@/lib/types';
+import {
+  getEquippedAC,
+  getEquippedWeapons,
+  getWeaponAttackAbility,
+  getWeaponAttackModifier,
+  getWeaponDamageLabel,
+  getWeaponDamageModifier,
+  getWeaponRangeLabel,
+  isWeaponInRange,
+  EquipmentItem,
+} from '@/lib/types';
 import {
   applyTurnAction,
   CORE_TURN_ACTIONS,
@@ -38,6 +48,7 @@ interface CombatPanelProps {
 }
 
 interface AttackResult {
+  rawAttackRoll: number;
   attackRoll: number;
   targetAC: number;
   hit: boolean;
@@ -46,6 +57,10 @@ interface AttackResult {
   natural20: boolean;
   natural1: boolean;
   weaponName: string;
+  attackAbility: string;
+  distanceFt: number;
+  rangeText: string;
+  attackMode: 'normal' | 'disadvantage';
 }
 
 const RESOURCE_STYLES: Record<'ready' | 'spent', string> = {
@@ -132,31 +147,39 @@ export function CombatPanel({
     const target = allTokens.find(t => t.id === targetId);
     if (!target) return;
 
+    const dx = Math.abs(target.x - token.x) / gridSize;
+    const dy = Math.abs(target.y - token.y) / gridSize;
+    const distanceFt = Math.round(Math.max(dx, dy) * ftPerCell);
+
+    if (!isWeaponInRange(weapon, distanceFt)) {
+      setLastAttack({
+        rawAttackRoll: 0,
+        attackRoll: 0,
+        targetAC: 0,
+        hit: false,
+        damageRoll: 0,
+        targetName: target.label,
+        natural20: false,
+        natural1: false,
+        weaponName: weapon.name,
+        attackAbility: charData ? getWeaponAttackAbility(charData, weapon) : 'STR',
+        distanceFt,
+        rangeText: getWeaponRangeLabel(weapon),
+        attackMode: 'normal',
+      });
+      return;
+    }
+
     const targetChar = characters.find(c => c.name === target.label);
     const targetAC = targetChar ? getEquippedAC(targetChar) : (target.type === 'monster' ? 10 + Math.floor(Math.random() * 6) : 10);
 
-    const attackDie = Math.floor(Math.random() * 20) + 1;
-    let attackMod = 0;
-    if (charData) {
-      const isFinesse = weapon.properties?.includes('finesse');
-      const isRanged = weapon.properties?.includes('ranged');
-      const str = charData.abilities.find(a => a.name === 'STR');
-      const dex = charData.abilities.find(a => a.name === 'DEX');
-      if (isRanged) {
-        attackMod = dex ? getModifier(dex.score) : 0;
-      } else if (isFinesse) {
-        const strMod = str ? getModifier(str.score) : 0;
-        const dexMod = dex ? getModifier(dex.score) : 0;
-        attackMod = Math.max(strMod, dexMod);
-      } else {
-        attackMod = str ? getModifier(str.score) : 0;
-      }
-    } else {
-      attackMod = Math.floor(Math.random() * 4) + 1;
-    }
-
-    const weaponAttackBonus = weapon.attackBonus || 0;
-    const attackTotal = attackDie + attackMod + weaponAttackBonus;
+    const longRangeShot = Boolean(weapon.range?.long && distanceFt > weapon.range.normal);
+    const firstAttackDie = Math.floor(Math.random() * 20) + 1;
+    const secondAttackDie = longRangeShot ? Math.floor(Math.random() * 20) + 1 : null;
+    const attackDie = secondAttackDie === null ? firstAttackDie : Math.min(firstAttackDie, secondAttackDie);
+    const attackAbility = charData ? getWeaponAttackAbility(charData, weapon) : 'STR';
+    const attackModifier = charData ? getWeaponAttackModifier(charData, weapon) : Math.floor(Math.random() * 4) + 1;
+    const attackTotal = attackDie + attackModifier;
     const natural20 = attackDie === 20;
     const natural1 = attackDie === 1;
     const hit = natural20 || (!natural1 && attackTotal >= targetAC);
@@ -164,14 +187,17 @@ export function CombatPanel({
     let damageRoll = 0;
     if (hit) {
       const damageDieSides = weapon.damageDie || 4;
-      damageRoll = Math.floor(Math.random() * damageDieSides) + 1;
-      damageRoll += (weapon.damageBonus || 0) + attackMod;
+      const damageDiceCount = weapon.damageDiceCount ?? 1;
+      damageRoll = Array.from({ length: damageDiceCount }, () => Math.floor(Math.random() * damageDieSides) + 1)
+        .reduce((total, value) => total + value, 0);
+      damageRoll += charData ? getWeaponDamageModifier(charData, weapon) : (weapon.damageBonus || 0);
       damageRoll = Math.max(1, damageRoll);
       if (natural20) damageRoll *= 2;
       onDamageToken(targetId, damageRoll);
     }
 
     setLastAttack({
+      rawAttackRoll: attackDie,
       attackRoll: attackTotal,
       targetAC,
       hit,
@@ -180,12 +206,16 @@ export function CombatPanel({
       natural20,
       natural1,
       weaponName: weapon.name,
+      attackAbility,
+      distanceFt,
+      rangeText: getWeaponRangeLabel(weapon),
+      attackMode: longRangeShot ? 'disadvantage' : 'normal',
     });
     setTurnState(current => ({
       ...current,
       actionAvailable: false,
       actionLabel: `Attack (${weapon.name})`,
-      turnLog: [`${token.label} attacked ${target.label} with ${weapon.name}.`, ...current.turnLog],
+      turnLog: [`${token.label} attacked ${target.label} with ${weapon.name} at ${distanceFt}ft.`, ...current.turnLog],
     }));
     setSelectedWeapon(null);
     setShowWeaponSelect(false);
@@ -319,7 +349,7 @@ export function CombatPanel({
                     }`}
                   >
                     <span>{weapon.name}</span>
-                    <span className="text-muted-foreground">1d{weapon.damageDie || 4}</span>
+                    <span className="text-muted-foreground">{getWeaponDamageLabel(weapon, charData ?? undefined)} · {getWeaponRangeLabel(weapon)}</span>
                   </button>
                 ))}
               </div>
@@ -334,14 +364,21 @@ export function CombatPanel({
                       const dx = Math.abs(enemy.x - token.x) / gridSize;
                       const dy = Math.abs(enemy.y - token.y) / gridSize;
                       const distanceFt = Math.round(Math.max(dx, dy) * ftPerCell);
+                      const weapon = selectedWeapon || availableWeapons[0];
+                      const inRange = weapon ? isWeaponInRange(weapon, distanceFt) : true;
+                      const longRangeShot = Boolean(weapon?.range?.long && weapon && distanceFt > weapon.range.normal && distanceFt <= weapon.range.long);
                       return (
                         <button
                           key={enemy.id}
                           onClick={() => performAttack(enemy.id)}
-                          className="w-full text-left px-2 py-1.5 rounded-sm text-[10px] font-mono border border-border hover:border-accent hover:text-accent transition-colors flex items-center justify-between"
+                          disabled={!inRange}
+                          className="w-full text-left px-2 py-1.5 rounded-sm text-[10px] font-mono border border-border hover:border-accent hover:text-accent transition-colors flex items-center justify-between disabled:opacity-40 disabled:hover:border-border disabled:hover:text-foreground"
                         >
                           <span>{enemy.label}</span>
-                          <span className="text-muted-foreground">{distanceFt}ft</span>
+                          <span className="text-muted-foreground">
+                            {distanceFt}ft
+                            {longRangeShot ? ' · disadv.' : !inRange ? ' · out of range' : ''}
+                          </span>
                         </button>
                       );
                     })}
@@ -408,10 +445,14 @@ export function CombatPanel({
           <div className={`border rounded-sm p-2 text-[10px] font-mono mt-1 ${lastAttack.hit ? 'border-secondary/40 bg-secondary/10' : 'border-border bg-muted/30'}`}>
             <div className="flex items-center gap-1 uppercase tracking-widest mb-1">
               {lastAttack.hit ? <Check className="w-3 h-3 text-secondary" /> : <XCircle className="w-3 h-3 text-destructive" />}
-              {lastAttack.hit ? 'Attack landed' : 'Attack missed'}
+              {lastAttack.attackRoll === 0 ? 'Target out of range' : lastAttack.hit ? 'Attack landed' : 'Attack missed'}
             </div>
             <p>{lastAttack.weaponName} vs {lastAttack.targetName}</p>
-            <p>Attack roll {lastAttack.attackRoll} vs AC {lastAttack.targetAC}</p>
+            <p>Range {lastAttack.distanceFt}ft / {lastAttack.rangeText}</p>
+            {lastAttack.attackRoll > 0 && (
+              <p>Attack roll {lastAttack.rawAttackRoll} + {lastAttack.attackRoll - lastAttack.rawAttackRoll} ({lastAttack.attackAbility}) = {lastAttack.attackRoll} vs AC {lastAttack.targetAC}</p>
+            )}
+            {lastAttack.attackMode === 'disadvantage' && <p className="text-muted-foreground">Long range attack: rolled with disadvantage.</p>}
             {lastAttack.natural20 && <p className="text-secondary">Critical hit!</p>}
             {lastAttack.natural1 && <p className="text-destructive">Natural 1.</p>}
             {lastAttack.hit && <p>Damage: {lastAttack.damageRoll}</p>}

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { EquipmentItem } from '@/lib/types';
+import { EquipmentItem, getWeaponDamageLabel, getWeaponRangeLabel } from '@/lib/types';
 import { X, Check } from 'lucide-react';
 
 interface EquipmentRowProps {
@@ -20,11 +20,17 @@ export function EquipmentRow({ item, onToggleEquip, onRemove, editable }: Equipm
         {item.name}
         {item.damageDie && item.category === 'weapon' && (
           <span className="ml-1 text-[9px] text-muted-foreground">
-            (1d{item.damageDie}{(item.damageBonus || 0) > 0 ? `+${item.damageBonus}` : ''})
+            ({getWeaponDamageLabel(item)} · {getWeaponRangeLabel(item)})
           </span>
         )}
-        {item.acBonus && item.category === 'armor' && (
-          <span className="ml-1 text-[9px] text-muted-foreground">(+{item.acBonus} AC)</span>
+        {(item.acBonus || item.armorBaseAC) && item.category === 'armor' && (
+          <span className="ml-1 text-[9px] text-muted-foreground">
+            (
+            {item.armorType === 'shield'
+              ? `+${item.acBonus} AC`
+              : `AC ${item.armorBaseAC}${item.armorType === 'medium' ? ' + DEX (max 2)' : item.armorType === 'light' ? ' + DEX' : ''}`}
+            )
+          </span>
         )}
       </span>
       <span className="text-muted-foreground w-16 text-right tabular-nums">{item.weight} lb</span>
