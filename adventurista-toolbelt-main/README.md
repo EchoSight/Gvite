@@ -136,6 +136,6 @@ Recommended Render setup:
 3. Attach a persistent disk mounted at `/var/data`.
 4. Set `HOST_ROOT_DIR=/var/data/adventurista-host`.
 5. Set `CORS_ALLOWED_ORIGINS=https://echosight.github.io`.
-6. After deploy, copy the Render service URL into the Maps page as **Host URL** and use the same **Campaign ID** on every device.
+6. After deploy, copy the Render service URL into the Maps page as **Host URL** and use the same **Campaign ID** on every device. For this deployment, use `https://gvite.onrender.com` as the **Host URL**.
 
 The host exposes `/health` for Render health checks and stores campaign data plus uploaded map assets under the configured host root directory.
