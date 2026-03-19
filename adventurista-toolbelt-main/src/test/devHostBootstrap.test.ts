@@ -19,6 +19,7 @@ describe('devHost bootstrap', () => {
     expect(config.port).toBe(8787);
     expect(config.campaignId).toBe('campaign-dev');
     expect(config.rootDir).toBe('/workspace/Gvite/adventurista-toolbelt-main/.adventurista-host');
+    expect(config.allowedOrigins).toEqual(['*']);
   });
 
   it('accepts environment overrides', () => {
@@ -28,6 +29,7 @@ describe('devHost bootstrap', () => {
       CAMPAIGN_ID: 'camp-42',
       CAMPAIGN_NAME: 'Storm Keep',
       HOST_ROOT_DIR: 'tmp/host-data',
+      CORS_ALLOWED_ORIGINS: 'https://echosight.github.io,https://example.com',
     }, '/repo');
 
     expect(config).toEqual({
@@ -36,6 +38,7 @@ describe('devHost bootstrap', () => {
       campaignId: 'camp-42',
       campaignName: 'Storm Keep',
       rootDir: '/repo/tmp/host-data',
+      allowedOrigins: ['https://echosight.github.io', 'https://example.com'],
     });
   });
 
@@ -56,6 +59,7 @@ describe('devHost bootstrap', () => {
     const summary = formatDevHostSummary(started.config, started.address);
     expect(summary).toContain(`Host URL: http://127.0.0.1:${started.address.port}`);
     expect(summary).toContain('Campaign ID: camp-dev');
+    expect(summary).toContain('Allowed Origins: *');
 
     const snapshotResponse = await fetch(`http://127.0.0.1:${started.address.port}/api/campaigns/camp-dev/snapshot`);
     expect(snapshotResponse.status).toBe(200);

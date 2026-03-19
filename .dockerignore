@@ -1,0 +1,5 @@
+.git
+node_modules
+adventurista-toolbelt-main/node_modules
+adventurista-toolbelt-main/dist
+adventurista-toolbelt-main/.adventurista-host

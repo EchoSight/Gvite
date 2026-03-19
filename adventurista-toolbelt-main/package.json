@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "host:dev": "vite-node --config vite.config.ts --script src/server/devHost.ts",
+    "host:start": "vite-node --config vite.config.ts --script src/server/devHost.ts",
     "build": "vite build",
     "build:pages": "vite build --base=./",
     "build:dev": "vite build --mode development",

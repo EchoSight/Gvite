@@ -24,7 +24,7 @@ describe('CampaignHostServer', () => {
   it('serves snapshots, accepts events, and broadcasts websocket updates', async () => {
     const rootDir = mkdtempSync(join(tmpdir(), 'adventurista-host-'));
     const repository = new SqliteCampaignRepository({ rootDir });
-    const server = new CampaignHostServer({ repository });
+    const server = new CampaignHostServer({ repository, allowedOrigins: ['https://echosight.github.io'] });
     servers.push(server);
 
     const { port } = await server.listen();
@@ -68,9 +68,21 @@ describe('CampaignHostServer', () => {
     const snapshotResponse = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-1/snapshot`);
     expect(snapshotResponse.status).toBe(200);
 
+    const preflightResponse = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-1/events`, {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://echosight.github.io',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'content-type',
+      },
+    });
+    expect(preflightResponse.status).toBe(204);
+    expect(preflightResponse.headers.get('access-control-allow-origin')).toBe('https://echosight.github.io');
+
+
     const assetResponse = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-1/assets`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', origin: 'https://echosight.github.io' },
       body: JSON.stringify({
         kind: 'handouts',
         filename: 'rumors.txt',
@@ -80,15 +92,18 @@ describe('CampaignHostServer', () => {
       }),
     });
     expect(assetResponse.status).toBe(201);
+    expect(assetResponse.headers.get('access-control-allow-origin')).toBe('https://echosight.github.io');
     const asset = await assetResponse.json();
 
-    const assetFetchResponse = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-1/assets/${asset.id}`);
+    const assetFetchResponse = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-1/assets/${asset.id}`, {
+      headers: { origin: 'https://echosight.github.io' },
+    });
     expect(assetFetchResponse.status).toBe(200);
     expect(await assetFetchResponse.text()).toBe('Vines move at night.');
 
     const eventResponse = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-1/events`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', origin: 'https://echosight.github.io' },
       body: JSON.stringify({
         type: 'resource:created',
         source: 'local-ui',
@@ -107,6 +122,7 @@ describe('CampaignHostServer', () => {
     });
 
     expect(eventResponse.status).toBe(201);
+    expect(eventResponse.headers.get('access-control-allow-origin')).toBe('https://echosight.github.io');
     const wsMessage = await messagePromise;
     expect(wsMessage).toContain('campaign:event');
 
