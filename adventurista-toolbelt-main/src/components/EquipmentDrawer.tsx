@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { EQUIPMENT_CATALOG, EquipmentItem } from '@/lib/types';
+import { EQUIPMENT_CATALOG, EquipmentItem, getWeaponDamageLabel, getWeaponRangeLabel } from '@/lib/types';
 import { X, Search, Plus } from 'lucide-react';
 
 interface EquipmentDrawerProps {
@@ -91,6 +91,14 @@ export function EquipmentDrawer({ open, onClose, onAdd, existingIds }: Equipment
                     <div className="flex gap-3 mt-0.5">
                       <span className="text-[10px] text-muted-foreground uppercase">{item.category}</span>
                       <span className="text-[10px] text-muted-foreground tabular-nums">{item.weight} lb</span>
+                      {item.category === 'weapon' && item.damageDie && (
+                        <span className="text-[10px] text-muted-foreground">{getWeaponDamageLabel(item)} · {getWeaponRangeLabel(item)}</span>
+                      )}
+                      {item.category === 'armor' && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {item.armorType === 'shield' ? `+${item.acBonus} AC` : `AC ${item.armorBaseAC ?? 10}`}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </motion.button>
