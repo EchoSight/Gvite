@@ -1,3 +1,5 @@
+import { loadObstacles as loadStoredObstacles, saveObstacles as saveStoredObstacles } from './repositories';
+
 // Obstacle types and persistence for map tools
 
 export interface ObstacleLine {
@@ -25,12 +27,11 @@ export interface ObstacleRect {
 export type Obstacle = ObstacleLine | ObstacleRect;
 
 export function loadObstacles(mapId: string): Obstacle[] {
-  const data = localStorage.getItem(`map-obstacles-${mapId}`);
-  return data ? JSON.parse(data) : [];
+  return loadStoredObstacles(mapId);
 }
 
 export function saveObstacles(mapId: string, obstacles: Obstacle[]) {
-  localStorage.setItem(`map-obstacles-${mapId}`, JSON.stringify(obstacles));
+  saveStoredObstacles(mapId, obstacles);
 }
 
 export function makeId(): string {

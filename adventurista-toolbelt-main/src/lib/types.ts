@@ -200,3 +200,17 @@ export const EQUIPMENT_CATALOG: Omit<EquipmentItem, 'id' | 'equipped'>[] = [
   { name: 'Healing Potion', weight: 0.5, quantity: 1, category: 'consumable', damageDiceCount: 2, damageDie: 4, damageBonus: 2, properties: ['healing'] },
   { name: 'Antitoxin', weight: 0, quantity: 1, category: 'consumable' },
 ];
+
+
+export interface MapToken {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  color: string;
+  icon?: string;
+  type: 'character' | 'monster';
+  hp?: number;
+  maxHp?: number;
+  visionRadius?: number;
+}
