@@ -38,6 +38,7 @@ npm run dev
 
 - [Desktop multiplayer architecture plan](docs/desktop-multiplayer-architecture.md)
 - [Multiplayer host scaffolding notes](src/server/README.md)
+- [Phase 2 multiplayer checklist](docs/phase-2-multiplayer-checklist.md)
 
 ## Multiplayer scaffolding
 

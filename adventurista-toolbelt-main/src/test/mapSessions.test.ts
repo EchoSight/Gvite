@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { createMap } from '@/lib/campaignMutations';
 import { LocalCampaignSync } from '@/lib/campaignSync';
 import { getCellCenter, getCellFromPoint, getCellLabel, getCellLabelFromPoint } from '@/lib/gridCoordinates';
-import { MapCollectionSession, MapSession } from '@/lib/mapSessions';
+import {
+  MapCollectionSession,
+  MapSession,
+  mapCollectionSnapshotFromCampaign,
+  mapSnapshotFromCampaign,
+  resolveMapIntent,
+} from '@/lib/mapSessions';
 import { MemoryStore } from '@/lib/storage';
 
 const defaultGridSettings = {
@@ -75,5 +81,51 @@ describe('map sessions', () => {
     expect(snapshot.maps).toEqual([]);
     expect(snapshot.version).toBe(2);
     expect(versions).toEqual([1, 2]);
+  });
+
+  it('derives hosted map events and snapshots from campaign snapshots', () => {
+    const campaignSnapshot = {
+      campaign: {
+        id: 'camp-1',
+        name: 'The Vale',
+        createdAt: '2026-03-19T00:00:00.000Z',
+        updatedAt: '2026-03-19T00:00:00.000Z',
+        version: 7,
+      },
+      characters: [],
+      resources: [],
+      maps: [{ id: 'map-1', name: 'Dungeon', image: '/map.png', createdAt: '2026-03-19T00:00:00.000Z' }],
+      mapStates: {
+        'map-1': {
+          mapId: 'map-1',
+          tokens: [{ id: 'token-1', label: 'Aria', x: 40, y: 80, color: 'blue', type: 'character', hp: 10, maxHp: 12 }],
+          gridSettings: { ...defaultGridSettings, offsetX: 8 },
+          obstacles: [],
+        },
+      },
+      events: [],
+    };
+
+    expect(mapCollectionSnapshotFromCampaign(campaignSnapshot).version).toBe(7);
+    expect(mapSnapshotFromCampaign(campaignSnapshot, 'map-1', defaultGridSettings)).toEqual({
+      mapId: 'map-1',
+      tokens: [expect.objectContaining({ id: 'token-1', x: 40, y: 80 })],
+      gridSettings: expect.objectContaining({ offsetX: 8 }),
+      obstacles: [],
+      version: 7,
+    });
+
+    const derivedEvent = resolveMapIntent(
+      mapSnapshotFromCampaign(campaignSnapshot, 'map-1', defaultGridSettings),
+      { type: 'map:token_move', tokenId: 'token-1', x: 120, y: 140 },
+    );
+    expect(derivedEvent).toEqual({
+      type: 'map:tokens_updated',
+      source: 'local-ui',
+      payload: {
+        mapId: 'map-1',
+        tokens: [expect.objectContaining({ id: 'token-1', x: 120, y: 140 })],
+      },
+    });
   });
 });

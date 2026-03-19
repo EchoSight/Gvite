@@ -44,6 +44,18 @@ export class NetworkCampaignClient {
     this.wsFactory = options.webSocketFactory;
   }
 
+  getBaseUrl(): string {
+    return normalizeBaseUrl(this.options.baseUrl);
+  }
+
+  getCampaignId(): string {
+    return this.options.campaignId;
+  }
+
+  getAssetUrl(assetId: string): string {
+    return `${this.getBaseUrl()}/api/campaigns/${this.getCampaignId()}/assets/${assetId}`;
+  }
+
   async fetchSnapshot(): Promise<CampaignSnapshot> {
     const response = await this.fetchImpl(`${normalizeBaseUrl(this.options.baseUrl)}/api/campaigns/${this.options.campaignId}/snapshot`);
     if (!response.ok) {
