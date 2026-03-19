@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   ZoomIn, ZoomOut, RotateCcw, Plus, Trash2, X,
-  Grid3X3, Eye, EyeOff, Minus, MousePointer, Slash, Square,
+  Grid3X3, Eye, EyeOff, Minus, MousePointer, Move, Slash, Square,
 } from 'lucide-react';
 import { getCharacters } from '@/lib/store';
 import { Character } from '@/lib/types';
@@ -32,6 +32,14 @@ interface MapCanvasProps {
   mapId: string;
 }
 
+interface GridSettings {
+  showGrid: boolean;
+  gridSize: number;
+  ftPerCell: number;
+  offsetX: number;
+  offsetY: number;
+}
+
 const MONSTER_PRESETS = [
   { label: 'Goblin', color: 'hsl(120, 60%, 35%)', hp: 7 },
   { label: 'Orc', color: 'hsl(30, 70%, 35%)', hp: 15 },
@@ -44,6 +52,39 @@ const MONSTER_PRESETS = [
 const DEFAULT_GRID_SIZE = 40;
 const DEFAULT_FT_PER_CELL = 5;
 const DEFAULT_VISION_CELLS = 12; // 12 cells = 60ft default vision
+const DEFAULT_GRID_OFFSET = { x: 0, y: 0 };
+
+const loadGridSettings = (mapId: string): GridSettings => {
+  const saved = localStorage.getItem(`map-grid-settings-${mapId}`);
+  if (!saved) {
+    return {
+      showGrid: true,
+      gridSize: DEFAULT_GRID_SIZE,
+      ftPerCell: DEFAULT_FT_PER_CELL,
+      offsetX: DEFAULT_GRID_OFFSET.x,
+      offsetY: DEFAULT_GRID_OFFSET.y,
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(saved) as Partial<GridSettings>;
+    return {
+      showGrid: parsed.showGrid ?? true,
+      gridSize: parsed.gridSize ?? DEFAULT_GRID_SIZE,
+      ftPerCell: parsed.ftPerCell ?? DEFAULT_FT_PER_CELL,
+      offsetX: parsed.offsetX ?? DEFAULT_GRID_OFFSET.x,
+      offsetY: parsed.offsetY ?? DEFAULT_GRID_OFFSET.y,
+    };
+  } catch {
+    return {
+      showGrid: true,
+      gridSize: DEFAULT_GRID_SIZE,
+      ftPerCell: DEFAULT_FT_PER_CELL,
+      offsetX: DEFAULT_GRID_OFFSET.x,
+      offsetY: DEFAULT_GRID_OFFSET.y,
+    };
+  }
+};
 
 export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
   const { isDM } = useGame();
@@ -60,9 +101,9 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
   const [draggingToken, setDraggingToken] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [showAddMenu, setShowAddMenu] = useState(false);
-  const [showGrid, setShowGrid] = useState(true);
-  const [gridSize, setGridSize] = useState(DEFAULT_GRID_SIZE);
-  const [ftPerCell, setFtPerCell] = useState(DEFAULT_FT_PER_CELL);
+  const [gridSettings, setGridSettings] = useState<GridSettings>(() => loadGridSettings(mapId));
+  const { showGrid, gridSize, ftPerCell } = gridSettings;
+  const [gridOffset, setGridOffset] = useState(() => ({ x: gridSettings.offsetX, y: gridSettings.offsetY }));
   const [combatMovementUsed, setCombatMovementUsed] = useState(0);
   const [imgSize, setImgSize] = useState({ w: 800, h: 600 });
   const [selectedToken, setSelectedToken] = useState<string | null>(null);
@@ -95,14 +136,22 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
     saveObstacles(mapId, obstacles);
   }, [obstacles, mapId]);
 
+  useEffect(() => {
+    localStorage.setItem(`map-grid-settings-${mapId}`, JSON.stringify({
+      ...gridSettings,
+      offsetX: gridOffset.x,
+      offsetY: gridOffset.y,
+    }));
+  }, [gridSettings, gridOffset, mapId]);
+
   const handleImgLoad = () => {
     if (imgRef.current) {
       setImgSize({ w: imgRef.current.naturalWidth, h: imgRef.current.naturalHeight });
     }
   };
 
-  const gridCols = Math.ceil(imgSize.w / gridSize);
-  const gridRows = Math.ceil(imgSize.h / gridSize);
+  const gridCols = Math.ceil((imgSize.w - gridOffset.x) / gridSize) + 1;
+  const gridRows = Math.ceil((imgSize.h - gridOffset.y) / gridSize) + 1;
 
   // Vision viewers: all player character tokens
   const viewers = useMemo(() => {
@@ -121,6 +170,26 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
     if (token.type === 'character') return true; // Players always see their own tokens
     return isVisible(token.x, token.y, viewers, obstacles);
   }, [isDM, showPlayerPreview, viewers, obstacles]);
+
+  const snapToGrid = useCallback((value: number, axis: 'x' | 'y') => {
+    const offset = axis === 'x' ? gridOffset.x : gridOffset.y;
+    return Math.round((value - offset) / gridSize) * gridSize + offset;
+  }, [gridOffset.x, gridOffset.y, gridSize]);
+
+  const updateGridSettings = useCallback((updater: (current: GridSettings) => GridSettings) => {
+    setGridSettings(current => updater(current));
+  }, []);
+
+  const nudgeGrid = useCallback((axis: 'x' | 'y', delta: number) => {
+    setGridOffset(current => ({
+      ...current,
+      [axis]: current[axis] + delta,
+    }));
+  }, []);
+
+  const resetGridAlignment = useCallback(() => {
+    setGridOffset(DEFAULT_GRID_OFFSET);
+  }, []);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -185,8 +254,8 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
     let newY = mouseY - dragOffset.y;
 
     if (showGrid) {
-      newX = Math.round(newX / gridSize) * gridSize + gridSize / 2;
-      newY = Math.round(newY / gridSize) * gridSize + gridSize / 2;
+      newX = snapToGrid(newX, 'x') + gridSize / 2;
+      newY = snapToGrid(newY, 'y') + gridSize / 2;
     }
 
     setTokens(prev => prev.map(t =>
@@ -210,8 +279,8 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
     let newX = mouseX;
     let newY = mouseY;
     if (showGrid) {
-      newX = Math.round(newX / gridSize) * gridSize + gridSize / 2;
-      newY = Math.round(newY / gridSize) * gridSize + gridSize / 2;
+      newX = snapToGrid(newX, 'x') + gridSize / 2;
+      newY = snapToGrid(newY, 'y') + gridSize / 2;
     }
 
     const currentToken = tokens.find(t => t.id === currentTurnId);
@@ -258,8 +327,8 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
     const token: MapToken = {
       id: `token-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
       label: char.name,
-      x: 200 + Math.random() * 100,
-      y: 200 + Math.random() * 100,
+      x: snapToGrid(200 + Math.random() * 100, 'x') + gridSize / 2,
+      y: snapToGrid(200 + Math.random() * 100, 'y') + gridSize / 2,
       color: 'hsl(217, 91%, 60%)',
       icon: char.icon,
       type: 'character',
@@ -275,8 +344,8 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
     const token: MapToken = {
       id: `token-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
       label: preset.label,
-      x: 200 + Math.random() * 100,
-      y: 200 + Math.random() * 100,
+      x: snapToGrid(200 + Math.random() * 100, 'x') + gridSize / 2,
+      y: snapToGrid(200 + Math.random() * 100, 'y') + gridSize / 2,
       color: preset.color,
       type: 'monster',
       hp: preset.hp,
@@ -339,30 +408,73 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
 
           {/* Grid toggle */}
           <button
-            onClick={() => setShowGrid(!showGrid)}
+            onClick={() => updateGridSettings(current => ({ ...current, showGrid: !current.showGrid }))}
             className={`tactical-card !p-1 px-2 flex items-center gap-1 text-[9px] uppercase tracking-wider font-bold ${showGrid ? 'border-secondary text-secondary' : ''}`}
           >
             <Grid3X3 className="w-3 h-3" /> Grid
           </button>
           {showGrid && (
             <div className="flex items-center gap-1">
-              <button onClick={() => setGridSize(s => Math.max(20, s - 5))} className="tactical-card !p-1 px-1">
+              <button onClick={() => updateGridSettings(current => ({ ...current, gridSize: Math.max(20, current.gridSize - 5) }))} className="tactical-card !p-1 px-1">
                 <Minus className="w-3 h-3" />
               </button>
               <span className="font-mono text-[9px] text-muted-foreground w-8 text-center">{gridSize}px</span>
-              <button onClick={() => setGridSize(s => Math.min(100, s + 5))} className="tactical-card !p-1 px-1">
+              <button onClick={() => updateGridSettings(current => ({ ...current, gridSize: Math.min(100, current.gridSize + 5) }))} className="tactical-card !p-1 px-1">
                 <Plus className="w-3 h-3" />
               </button>
               {isDM && (
                 <>
                   <div className="w-px h-4 bg-border mx-1" />
-                  <button onClick={() => setFtPerCell(f => Math.max(5, f - 5))} className="tactical-card !p-1 px-1">
+                  <button onClick={() => updateGridSettings(current => ({ ...current, ftPerCell: Math.max(5, current.ftPerCell - 5) }))} className="tactical-card !p-1 px-1">
                     <Minus className="w-3 h-3" />
                   </button>
                   <span className="font-mono text-[9px] text-muted-foreground w-10 text-center">{ftPerCell}ft</span>
-                  <button onClick={() => setFtPerCell(f => Math.min(30, f + 5))} className="tactical-card !p-1 px-1">
+                  <button onClick={() => updateGridSettings(current => ({ ...current, ftPerCell: Math.min(30, current.ftPerCell + 5) }))} className="tactical-card !p-1 px-1">
                     <Plus className="w-3 h-3" />
                   </button>
+                </>
+              )}
+              {isDM && (
+                <>
+                  <div className="w-px h-4 bg-border mx-1" />
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => nudgeGrid('x', -1)}
+                      className="tactical-card !p-1 px-1 font-mono text-[10px]"
+                      title="Move grid left"
+                    >
+                      ←
+                    </button>
+                    <button
+                      onClick={() => nudgeGrid('y', -1)}
+                      className="tactical-card !p-1 px-1 font-mono text-[10px]"
+                      title="Move grid up"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      onClick={() => nudgeGrid('y', 1)}
+                      className="tactical-card !p-1 px-1 font-mono text-[10px]"
+                      title="Move grid down"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      onClick={() => nudgeGrid('x', 1)}
+                      className="tactical-card !p-1 px-1 font-mono text-[10px]"
+                      title="Move grid right"
+                    >
+                      →
+                    </button>
+                    <button
+                      onClick={resetGridAlignment}
+                      className="tactical-card !p-1 px-2 flex items-center gap-1 text-[9px] uppercase tracking-wider font-bold"
+                      title="Reset grid alignment"
+                    >
+                      <Move className="w-3 h-3" /> Align
+                    </button>
+                    <span className="font-mono text-[9px] text-muted-foreground w-16 text-center">{gridOffset.x},{gridOffset.y}</span>
+                  </div>
                 </>
               )}
             </div>
@@ -503,8 +615,8 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
                 {Array.from({ length: gridCols + 1 }, (_, i) => (
                   <line
                     key={`v-${i}`}
-                    x1={i * gridSize} y1={0}
-                    x2={i * gridSize} y2={imgSize.h}
+                    x1={gridOffset.x + i * gridSize} y1={0}
+                    x2={gridOffset.x + i * gridSize} y2={imgSize.h}
                     stroke="hsl(var(--foreground))"
                     strokeWidth={0.5}
                   />
@@ -512,8 +624,8 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
                 {Array.from({ length: gridRows + 1 }, (_, i) => (
                   <line
                     key={`h-${i}`}
-                    x1={0} y1={i * gridSize}
-                    x2={imgSize.w} y2={i * gridSize}
+                    x1={0} y1={gridOffset.y + i * gridSize}
+                    x2={imgSize.w} y2={gridOffset.y + i * gridSize}
                     stroke="hsl(var(--foreground))"
                     strokeWidth={0.5}
                   />
@@ -543,6 +655,7 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
               obstacles={obstacles}
               isDM={isDM}
               showPlayerPreview={showPlayerPreview}
+              gridOffset={gridOffset}
             />
 
             {/* Tokens */}
