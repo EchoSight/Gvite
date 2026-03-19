@@ -12,7 +12,7 @@ import {
   HandHelping,
 } from 'lucide-react';
 import { MapToken } from './MapCanvas';
-import { getCharacters } from '@/lib/store';
+import type { Character } from '@/lib/types';
 import {
   getEquippedAC,
   getEquippedWeapons,
@@ -45,6 +45,7 @@ interface CombatPanelProps {
   onSetMovementUsed: (ft: number) => void;
   onSetCombatMoving: (moving: boolean) => void;
   combatMoving: boolean;
+  characters: Character[];
 }
 
 interface AttackResult {
@@ -80,6 +81,7 @@ export function CombatPanel({
   onSetMovementUsed,
   onSetCombatMoving,
   combatMoving,
+  characters,
 }: CombatPanelProps) {
   const [mode, setMode] = useState<'idle' | 'moving' | 'attacking'>('idle');
   const [lastAttack, setLastAttack] = useState<AttackResult | null>(null);
@@ -97,7 +99,6 @@ export function CombatPanel({
     onSetMovementUsed(0);
   }, [token.id, onSetCombatMoving, onSetMovementUsed]);
 
-  const characters = getCharacters();
   const charData = characters.find(c => c.name === token.label);
   const baseMovement = charData?.speed || 30;
   const maxMovement = getTurnMovementLimit(baseMovement, turnState);

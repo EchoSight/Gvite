@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, SkipForward, RotateCcw, Swords } from 'lucide-react';
 import { MapToken } from './MapCanvas';
-import { getCharacters } from '@/lib/store';
+import type { Character } from '@/lib/types';
 import { getModifier } from '@/lib/types';
 
 export interface InitiativeEntry {
@@ -26,6 +26,7 @@ interface InitiativeTrackerProps {
   onResetCombat: () => void;
   combatActive: boolean;
   isDM: boolean;
+  characters: Character[];
 }
 
 export function InitiativeTracker({
@@ -38,11 +39,11 @@ export function InitiativeTracker({
   onResetCombat,
   combatActive,
   isDM,
+  characters,
 }: InitiativeTrackerProps) {
   const [rolling, setRolling] = useState(false);
 
   const rollInitiative = () => {
-    const characters = getCharacters();
     setRolling(true);
 
     const newEntries: InitiativeEntry[] = tokens.map(token => {

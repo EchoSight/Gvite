@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Character, formatModifier, getModifier, xpForLevel, getEquippedAC } from '@/lib/types';
-import { getCharacters, updateCharacter, deleteCharacter } from '@/lib/store';
+import { useCharacterSession } from '@/hooks/useCharacterSessions';
 import { StatBlock } from '@/components/StatBlock';
 import { HpBar } from '@/components/HpBar';
 import { EquipmentRow } from '@/components/EquipmentRow';
@@ -14,6 +14,7 @@ export default function CharacterView() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [char, setChar] = useState<Character | null>(null);
+  const { character, updateCharacter, removeCharacter, status } = useCharacterSession(id);
   const [editing, setEditing] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const iconInputRef = useRef<HTMLInputElement>(null);
@@ -30,20 +31,26 @@ export default function CharacterView() {
   };
 
   useEffect(() => {
-    const found = getCharacters().find(c => c.id === id);
-    if (!found) navigate('/');
-    else setChar(found);
-  }, [id]);
+    if (!id) return;
+    if (!character) return;
+    setChar(character);
+  }, [character, id]);
+
+  useEffect(() => {
+    if (!id) return;
+    if (status.state === 'connecting') return;
+    if (!character) navigate('/');
+  }, [character, id, navigate, status.state]);
 
   if (!char) return null;
 
   const save = (updated: Character) => {
     setChar(updated);
-    updateCharacter(updated);
+    void updateCharacter(updated);
   };
 
   const handleDelete = () => {
-    deleteCharacter(char.id);
+    void removeCharacter(char.id);
     navigate('/');
   };
 
@@ -57,6 +64,7 @@ export default function CharacterView() {
           <ArrowLeft className="w-4 h-4" />
           <span className="sr-only">BACK</span>
         </button>
+        <p className="text-[10px] uppercase tracking-widest text-muted-foreground">{status.mode === 'hosted' ? `HOSTED CHARACTER · ${status.state}` : 'LOCAL CHARACTER'}</p>
         {/* Avatar */}
         <div className="relative shrink-0">
           {char.icon ? (
