@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { EQUIPMENT_CATALOG, EquipmentItem } from '@/lib/types';
+import { EQUIPMENT_CATALOG, EquipmentItem, formatDamageRoll, formatRange } from '@/lib/types';
 import { X, Search, Plus } from 'lucide-react';
 
 interface EquipmentDrawerProps {
@@ -81,16 +81,24 @@ export function EquipmentDrawer({ open, onClose, onAdd, existingIds }: Equipment
                   className="w-full flex items-center gap-3 px-4 py-3 border-b border-border text-left hover:bg-muted/30 transition-colors"
                   whileTap={{ scale: 0.98 }}
                   onClick={() => {
-                    const id = `eq-${Date.now()}-${i}`;
+                    const id = existingIds.includes(item.name)
+                      ? `eq-${Date.now()}-${i}`
+                      : `eq-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now()}-${i}`;
                     onAdd({ ...item, id, equipped: false });
                   }}
                 >
                   <Plus className="w-3 h-3 text-muted-foreground" />
-                  <div className="flex-1">
-                    <span className="text-sm font-mono text-foreground">{item.name}</span>
-                    <div className="flex gap-3 mt-0.5">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-mono text-foreground block truncate">{item.name}</span>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 mt-0.5">
                       <span className="text-[10px] text-muted-foreground uppercase">{item.category}</span>
                       <span className="text-[10px] text-muted-foreground tabular-nums">{item.weight} lb</span>
+                      {item.category === 'weapon' && item.damageDie && (
+                        <span className="text-[10px] text-muted-foreground">{formatDamageRoll(item)} · {formatRange(item)}</span>
+                      )}
+                      {item.category === 'armor' && item.acBonus && (
+                        <span className="text-[10px] text-muted-foreground">+{item.acBonus} AC{item.armorType ? ` · ${item.armorType}` : ''}</span>
+                      )}
                     </div>
                   </div>
                 </motion.button>

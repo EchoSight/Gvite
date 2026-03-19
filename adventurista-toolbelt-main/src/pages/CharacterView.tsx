@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Character, formatModifier, getModifier, xpForLevel, getEquippedAC } from '@/lib/types';
+import { Character, xpForLevel, getEquippedAC, getEquippedWeapons, getWeaponAttackProfile, formatDamageRoll, formatRange, formatSignedNumber } from '@/lib/types';
 import { getCharacters, updateCharacter, deleteCharacter } from '@/lib/store';
 import { StatBlock } from '@/components/StatBlock';
 import { HpBar } from '@/components/HpBar';
@@ -13,7 +13,7 @@ import { useRef } from 'react';
 export default function CharacterView() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [char, setChar] = useState<Character | null>(null);
+  const [char, setChar] = useState<ReturnType<typeof getCharacters>[number] | null>(null);
   const [editing, setEditing] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const iconInputRef = useRef<HTMLInputElement>(null);
@@ -33,7 +33,7 @@ export default function CharacterView() {
     const found = getCharacters().find(c => c.id === id);
     if (!found) navigate('/');
     else setChar(found);
-  }, [id]);
+  }, [id, navigate]);
 
   if (!char) return null;
 
@@ -48,6 +48,8 @@ export default function CharacterView() {
   };
 
   const xpNext = xpForLevel(char.level + 1);
+
+  const equippedWeapons = getEquippedWeapons(char);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6">
@@ -231,12 +233,33 @@ export default function CharacterView() {
                   save(updated);
                 }}
                 onRemove={id => {
-                  save({ ...char, equipment: char.equipment.filter(i => i.id !== id) });
+                  const updated = { ...char, equipment: char.equipment.filter(i => i.id !== id) };
+                  updated.ac = getEquippedAC(updated);
+                  save(updated);
                 }}
               />
             ))
           )}
         </div>
+        {equippedWeapons.length > 0 && (
+          <div className="grid gap-1 mt-2">
+            {equippedWeapons.map(weapon => {
+              const profile = getWeaponAttackProfile(char, weapon);
+              return (
+                <div key={weapon.id} className="tactical-card flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono">
+                  <div>
+                    <p className="text-foreground">{weapon.name}</p>
+                    <p className="text-muted-foreground">{formatDamageRoll(weapon)} · {formatRange(weapon)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-foreground">{profile.attackAbility} {formatSignedNumber(profile.attackBonus)} to hit</p>
+                    <p className="text-muted-foreground">Damage bonus {formatSignedNumber(profile.damageBonus)}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div className="flex justify-end mt-1">
           <span className="text-[10px] text-muted-foreground font-mono tabular-nums">
             TOTAL WEIGHT: {char.equipment.reduce((s, i) => s + i.weight * i.quantity, 0)} lb
@@ -248,7 +271,9 @@ export default function CharacterView() {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         onAdd={item => {
-          save({ ...char, equipment: [...char.equipment, item] });
+          const updated = { ...char, equipment: [...char.equipment, item] };
+          updated.ac = getEquippedAC(updated);
+          save(updated);
         }}
         existingIds={char.equipment.map(e => e.id)}
       />

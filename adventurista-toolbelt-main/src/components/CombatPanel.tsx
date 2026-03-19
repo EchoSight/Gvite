@@ -1,9 +1,19 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Footprints, Swords, Shield, XCircle, Check, ChevronDown } from 'lucide-react';
+import { Footprints, Swords, Shield, XCircle, Check, ChevronDown, Crosshair } from 'lucide-react';
 import { MapToken } from './MapCanvas';
 import { getCharacters } from '@/lib/store';
-import { getModifier, getEquippedAC, getEquippedWeapons, EquipmentItem } from '@/lib/types';
+import {
+  EquipmentItem,
+  formatDamageRoll,
+  formatRange,
+  formatSignedNumber,
+  getDistanceBetweenPointsInFeet,
+  getEquippedAC,
+  getEquippedWeapons,
+  getWeaponAttackProfile,
+  isWeaponInRange,
+} from '@/lib/types';
 
 interface CombatPanelProps {
   token: MapToken;
@@ -22,13 +32,19 @@ interface CombatPanelProps {
 
 interface AttackResult {
   attackRoll: number;
+  attackDie: number;
   targetAC: number;
   hit: boolean;
   damageRoll: number;
+  damageExpression: string;
   targetName: string;
   natural20: boolean;
   natural1: boolean;
   weaponName: string;
+  attackBonus: number;
+  attackAbility: string;
+  distanceFt: number;
+  rangeLabel: string;
 }
 
 export function CombatPanel({
@@ -36,7 +52,7 @@ export function CombatPanel({
   allTokens,
   gridSize,
   ftPerCell,
-  onMoveToken,
+  onMoveToken: _onMoveToken,
   onDamageToken,
   onEndTurn,
   isCurrentTurn,
@@ -52,14 +68,12 @@ export function CombatPanel({
   const [showWeaponSelect, setShowWeaponSelect] = useState(false);
 
   const characters = getCharacters();
-  const charData = characters.find(c => c.name === token.label);
+  const charData = characters.find(character => character.name === token.label);
   const maxMovement = charData?.speed || 30;
   const remainingFt = Math.max(0, maxMovement - movementUsed);
 
-  // Get equipped weapons for this character
   const equippedWeapons = charData ? getEquippedWeapons(charData) : [];
 
-  // Unarmed strike fallback
   const unarmedStrike: EquipmentItem = {
     id: 'unarmed',
     name: 'Unarmed Strike',
@@ -68,57 +82,65 @@ export function CombatPanel({
     equipped: true,
     category: 'weapon',
     damageDie: 1,
+    damageDiceCount: 1,
     attackBonus: 0,
     damageBonus: 0,
   };
 
   const availableWeapons = equippedWeapons.length > 0 ? equippedWeapons : [unarmedStrike];
+  const activeWeapon = selectedWeapon || availableWeapons[0];
 
-  // Get enemies (opposite type)
-  const enemies = allTokens.filter(t => t.id !== token.id && t.type !== token.type);
+  const enemies = useMemo(
+    () => allTokens.filter(otherToken => otherToken.id !== token.id && otherToken.type !== token.type),
+    [allTokens, token.id, token.type],
+  );
+
+  const getTargetDistance = (target: MapToken) => getDistanceBetweenPointsInFeet(token, target, gridSize, ftPerCell);
 
   const performAttack = (targetId: string) => {
-    const weapon = selectedWeapon || availableWeapons[0];
+    const weapon = activeWeapon;
     if (!weapon) return;
 
-    const target = allTokens.find(t => t.id === targetId);
+    const target = allTokens.find(otherToken => otherToken.id === targetId);
     if (!target) return;
 
-    const targetChar = characters.find(c => c.name === target.label);
-    const targetAC = targetChar ? getEquippedAC(targetChar) : (target.type === 'monster' ? 10 + Math.floor(Math.random() * 6) : 10);
-
-    // Attack roll: d20 + ability mod + weapon bonus
-    const attackDie = Math.floor(Math.random() * 20) + 1;
-    let attackMod = 0;
-    if (charData) {
-      const isFinesse = weapon.properties?.includes('finesse');
-      const isRanged = weapon.properties?.includes('ranged');
-      const str = charData.abilities.find(a => a.name === 'STR');
-      const dex = charData.abilities.find(a => a.name === 'DEX');
-      if (isRanged) {
-        attackMod = dex ? getModifier(dex.score) : 0;
-      } else if (isFinesse) {
-        const strMod = str ? getModifier(str.score) : 0;
-        const dexMod = dex ? getModifier(dex.score) : 0;
-        attackMod = Math.max(strMod, dexMod);
-      } else {
-        attackMod = str ? getModifier(str.score) : 0;
-      }
-    } else {
-      attackMod = Math.floor(Math.random() * 4) + 1;
+    const distanceFt = getTargetDistance(target);
+    if (!isWeaponInRange(distanceFt, weapon)) {
+      setLastAttack(null);
+      return;
     }
 
-    const weaponAttackBonus = weapon.attackBonus || 0;
-    const attackTotal = attackDie + attackMod + weaponAttackBonus;
+    const targetChar = characters.find(character => character.name === target.label);
+    const targetAC = targetChar
+      ? getEquippedAC(targetChar)
+      : target.type === 'monster'
+        ? 10 + Math.floor(Math.random() * 6)
+        : 10;
+
+    const attackDie = Math.floor(Math.random() * 20) + 1;
+    const attackProfile = charData
+      ? getWeaponAttackProfile(charData, weapon)
+      : {
+          attackAbility: 'STR',
+          attackModifier: 2,
+          damageModifier: 2,
+          attackBonus: 2,
+          damageBonus: 2,
+          damageDiceCount: weapon.damageDiceCount ?? 1,
+          damageDie: weapon.damageDie ?? 1,
+          range: weapon.range,
+          rangeLabel: formatRange(weapon),
+        };
+
+    const attackTotal = attackDie + attackProfile.attackBonus;
     const natural20 = attackDie === 20;
     const natural1 = attackDie === 1;
     const hit = natural20 || (!natural1 && attackTotal >= targetAC);
 
     let damageRoll = 0;
     if (hit) {
-      const damageDieSides = weapon.damageDie || 4;
-      damageRoll = Math.floor(Math.random() * damageDieSides) + 1;
-      damageRoll += (weapon.damageBonus || 0) + attackMod;
+      const damageDice = Array.from({ length: attackProfile.damageDiceCount }, () => Math.floor(Math.random() * attackProfile.damageDie) + 1);
+      damageRoll = damageDice.reduce((total, roll) => total + roll, 0) + attackProfile.damageBonus;
       damageRoll = Math.max(1, damageRoll);
       if (natural20) damageRoll *= 2;
       onDamageToken(targetId, damageRoll);
@@ -126,13 +148,19 @@ export function CombatPanel({
 
     setLastAttack({
       attackRoll: attackTotal,
+      attackDie,
       targetAC,
       hit,
       damageRoll,
+      damageExpression: `${attackProfile.damageDiceCount}d${attackProfile.damageDie}${formatSignedNumber(attackProfile.damageBonus)}`,
       targetName: target.label,
       natural20,
       natural1,
       weaponName: weapon.name,
+      attackBonus: attackProfile.attackBonus,
+      attackAbility: attackProfile.attackAbility,
+      distanceFt,
+      rangeLabel: attackProfile.rangeLabel,
     });
     setHasAttacked(true);
     setSelectedWeapon(null);
@@ -159,7 +187,6 @@ export function CombatPanel({
         </span>
       </div>
 
-      {/* Movement info */}
       <div className="px-3 py-2 border-b border-border">
         <div className="flex items-center justify-between">
           <span className="text-[9px] uppercase tracking-widest text-muted-foreground">Movement</span>
@@ -175,7 +202,6 @@ export function CombatPanel({
         </div>
       </div>
 
-      {/* Actions */}
       <div className="p-2 flex flex-col gap-1">
         <button
           onClick={() => {
@@ -192,7 +218,6 @@ export function CombatPanel({
           {combatMoving ? 'Click map to move' : `Move (${remainingFt}ft left)`}
         </button>
 
-        {/* Attack with weapon selection */}
         <button
           onClick={() => {
             if (mode === 'attacking') {
@@ -212,7 +237,6 @@ export function CombatPanel({
           {hasAttacked ? 'Already attacked' : mode === 'attacking' ? 'Select weapon & target' : 'Attack'}
         </button>
 
-        {/* Weapon selection */}
         <AnimatePresence>
           {mode === 'attacking' && showWeaponSelect && (
             <motion.div
@@ -222,29 +246,36 @@ export function CombatPanel({
               className="space-y-1 pl-2"
             >
               <p className="text-[9px] uppercase tracking-widest text-muted-foreground py-1">Choose Weapon</p>
-              {availableWeapons.map(w => (
-                <button
-                  key={w.id}
-                  onClick={() => { setSelectedWeapon(w); setShowWeaponSelect(false); }}
-                  className={`w-full tactical-card !p-2 flex items-center gap-2 text-[10px] font-mono text-foreground hover:border-accent ${
-                    selectedWeapon?.id === w.id ? 'border-accent text-accent' : ''
-                  }`}
-                >
-                  <Swords className="w-3 h-3 text-muted-foreground" />
-                  <span className="flex-1 text-left">{w.name}</span>
-                  <span className="text-[8px] text-muted-foreground">
-                    1d{w.damageDie || 1}
-                    {(w.damageBonus || 0) > 0 ? `+${w.damageBonus}` : ''}
-                  </span>
-                </button>
-              ))}
+              {availableWeapons.map(weapon => {
+                const profile = charData ? getWeaponAttackProfile(charData, weapon) : null;
+                return (
+                  <button
+                    key={weapon.id}
+                    onClick={() => {
+                      setSelectedWeapon(weapon);
+                      setShowWeaponSelect(false);
+                    }}
+                    className={`w-full tactical-card !p-2 flex items-center gap-2 text-[10px] font-mono text-foreground hover:border-accent ${
+                      selectedWeapon?.id === weapon.id ? 'border-accent text-accent' : ''
+                    }`}
+                  >
+                    <Swords className="w-3 h-3 text-muted-foreground" />
+                    <div className="flex-1 text-left min-w-0">
+                      <div className="truncate">{weapon.name}</div>
+                      <div className="text-[8px] text-muted-foreground">
+                        {formatDamageRoll(weapon)} · {formatRange(weapon)}
+                        {profile && ` · ${profile.attackAbility} ${formatSignedNumber(profile.attackBonus)} to hit`}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Target selection (shown after weapon is chosen) */}
         <AnimatePresence>
-          {mode === 'attacking' && !showWeaponSelect && (selectedWeapon || availableWeapons.length === 1) && (
+          {mode === 'attacking' && !showWeaponSelect && activeWeapon && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
@@ -252,9 +283,16 @@ export function CombatPanel({
               className="space-y-1 pl-2"
             >
               <div className="flex items-center justify-between py-1">
-                <p className="text-[9px] uppercase tracking-widest text-muted-foreground">
-                  Attacking with: <span className="text-foreground">{(selectedWeapon || availableWeapons[0])?.name}</span>
-                </p>
+                <div>
+                  <p className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                    Attacking with <span className="text-foreground">{activeWeapon.name}</span>
+                  </p>
+                  {charData && (
+                    <p className="text-[8px] text-muted-foreground">
+                      {formatDamageRoll(activeWeapon)} · {getWeaponAttackProfile(charData, activeWeapon).attackAbility} based · {formatRange(activeWeapon)}
+                    </p>
+                  )}
+                </div>
                 <button
                   onClick={() => setShowWeaponSelect(true)}
                   className="text-[8px] text-muted-foreground hover:text-foreground"
@@ -265,30 +303,42 @@ export function CombatPanel({
               {enemies.length === 0 ? (
                 <p className="text-[9px] text-muted-foreground py-1">No targets</p>
               ) : (
-                enemies.map(enemy => (
-                  <button
-                    key={enemy.id}
-                    onClick={() => performAttack(enemy.id)}
-                    className="w-full tactical-card !p-2 flex items-center gap-2 text-[10px] font-mono text-foreground hover:border-accent"
-                  >
-                    <div
-                      className="w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-bold text-background"
-                      style={{ backgroundColor: enemy.color }}
+                enemies.map(enemy => {
+                  const distanceFt = getTargetDistance(enemy);
+                  const inRange = isWeaponInRange(distanceFt, activeWeapon);
+                  return (
+                    <button
+                      key={enemy.id}
+                      onClick={() => performAttack(enemy.id)}
+                      disabled={!inRange}
+                      className={`w-full tactical-card !p-2 flex items-center gap-2 text-[10px] font-mono text-foreground ${
+                        inRange ? 'hover:border-accent' : 'opacity-50 cursor-not-allowed'
+                      }`}
                     >
-                      {enemy.label[0]}
-                    </div>
-                    {enemy.label}
-                    {enemy.hp !== undefined && (
-                      <span className="ml-auto text-[9px] text-muted-foreground">{enemy.hp}HP</span>
-                    )}
-                  </button>
-                ))
+                      <div
+                        className="w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-bold text-background"
+                        style={{ backgroundColor: enemy.color }}
+                      >
+                        {enemy.label[0]}
+                      </div>
+                      <div className="flex-1 text-left min-w-0">
+                        <div className="truncate">{enemy.label}</div>
+                        <div className="text-[8px] text-muted-foreground flex items-center gap-1">
+                          <Crosshair className="w-2.5 h-2.5" />
+                          {distanceFt} ft away · {inRange ? 'In range' : `Out of range (${formatRange(activeWeapon)})`}
+                        </div>
+                      </div>
+                      {enemy.hp !== undefined && (
+                        <span className="text-[9px] text-muted-foreground">{enemy.hp}HP</span>
+                      )}
+                    </button>
+                  );
+                })
               )}
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Attack result */}
         <AnimatePresence>
           {lastAttack && (
             <motion.div
@@ -310,11 +360,14 @@ export function CombatPanel({
                 </span>
               </div>
               <p className="text-muted-foreground">
-                {lastAttack.weaponName}: {lastAttack.attackRoll} vs AC {lastAttack.targetAC} ({lastAttack.targetName})
+                {lastAttack.weaponName}: d20 {formatSignedNumber(lastAttack.attackBonus)} = {lastAttack.attackRoll} vs AC {lastAttack.targetAC}
+              </p>
+              <p className="text-muted-foreground">
+                {lastAttack.targetName} · {lastAttack.distanceFt} ft · {lastAttack.rangeLabel} · {lastAttack.attackAbility}
               </p>
               {lastAttack.hit && (
                 <p className="text-foreground font-bold">
-                  {lastAttack.damageRoll} damage{lastAttack.natural20 ? ' (crit!)' : ''}
+                  {lastAttack.damageRoll} damage from {lastAttack.damageExpression}{lastAttack.natural20 ? ' (crit!)' : ''}
                 </p>
               )}
             </motion.div>

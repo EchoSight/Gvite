@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { EquipmentItem } from '@/lib/types';
+import { EquipmentItem, formatDamageRoll, formatRange } from '@/lib/types';
 import { X, Check } from 'lucide-react';
 
 interface EquipmentRowProps {
@@ -16,17 +16,21 @@ export function EquipmentRow({ item, onToggleEquip, onRemove, editable }: Equipm
       whileHover={{ backgroundColor: 'rgba(255,255,255,0.02)' }}
     >
       <span className="text-muted-foreground w-8 text-right tabular-nums">{item.quantity}×</span>
-      <span className="flex-1 text-foreground">
-        {item.name}
-        {item.damageDie && item.category === 'weapon' && (
-          <span className="ml-1 text-[9px] text-muted-foreground">
-            (1d{item.damageDie}{(item.damageBonus || 0) > 0 ? `+${item.damageBonus}` : ''})
-          </span>
-        )}
-        {item.acBonus && item.category === 'armor' && (
-          <span className="ml-1 text-[9px] text-muted-foreground">(+{item.acBonus} AC)</span>
-        )}
-      </span>
+      <div className="flex-1 text-foreground min-w-0">
+        <div className="truncate">
+          {item.name}
+          {item.category === 'weapon' && item.damageDie && (
+            <span className="ml-1 text-[9px] text-muted-foreground">
+              ({formatDamageRoll(item)} · {formatRange(item)})
+            </span>
+          )}
+          {item.acBonus && item.category === 'armor' && (
+            <span className="ml-1 text-[9px] text-muted-foreground">
+              (+{item.acBonus} AC{item.armorType ? ` · ${item.armorType}` : ''})
+            </span>
+          )}
+        </div>
+      </div>
       <span className="text-muted-foreground w-16 text-right tabular-nums">{item.weight} lb</span>
       <span className="text-[10px] uppercase tracking-wider text-muted-foreground w-20">{item.category}</span>
       {editable && (
