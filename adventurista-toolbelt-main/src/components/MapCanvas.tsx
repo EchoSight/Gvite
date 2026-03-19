@@ -9,12 +9,13 @@ import { Character, MapToken } from '@/lib/types';
 import { useGame } from '@/lib/GameContext';
 import { InitiativeTracker, InitiativeEntry } from './InitiativeTracker';
 import { CombatPanel } from './CombatPanel';
-import { Obstacle, loadObstacles } from '@/lib/obstacles';
+import type { Obstacle } from '@/lib/obstacles';
 import { ObstacleLayer, ObstacleTool } from './ObstacleLayer';
 import { FogOfWarLayer } from './FogOfWarLayer';
+import { getCellFromPoint, getCellLabelFromPoint } from '@/lib/gridCoordinates';
 import { isVisible, isMovementBlocked } from '@/lib/visibility';
-import { loadGridSettings as loadStoredGridSettings, loadMapTokens, type GridSettings } from '@/lib/repositories';
-import { replaceMapObstacles, replaceMapTokens, saveMapGridSettings } from '@/lib/campaignMutations';
+import type { GridSettings } from '@/lib/repositories';
+import { useMapSession } from '@/hooks/useMapSessions';
 
 
 interface MapCanvasProps {
@@ -43,7 +44,15 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
   const { isDM } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
-  const [tokens, setTokens] = useState<MapToken[]>(() => loadMapTokens(mapId));
+  const defaultGridSettings = useMemo<GridSettings>(() => ({
+    showGrid: true,
+    gridSize: DEFAULT_GRID_SIZE,
+    ftPerCell: DEFAULT_FT_PER_CELL,
+    offsetX: DEFAULT_GRID_OFFSET.x,
+    offsetY: DEFAULT_GRID_OFFSET.y,
+  }), []);
+  const { snapshot: mapSnapshot, dispatch } = useMapSession(mapId, defaultGridSettings);
+  const { tokens, obstacles } = mapSnapshot;
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
@@ -51,13 +60,7 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
   const [draggingToken, setDraggingToken] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [showAddMenu, setShowAddMenu] = useState(false);
-  const [gridSettings, setGridSettings] = useState<GridSettings>(() => loadStoredGridSettings(mapId, {
-    showGrid: true,
-    gridSize: DEFAULT_GRID_SIZE,
-    ftPerCell: DEFAULT_FT_PER_CELL,
-    offsetX: DEFAULT_GRID_OFFSET.x,
-    offsetY: DEFAULT_GRID_OFFSET.y,
-  }));
+  const [gridSettings, setGridSettings] = useState<GridSettings>(() => mapSnapshot.gridSettings);
   const { showGrid, gridSize, ftPerCell } = gridSettings;
   const [gridOffset, setGridOffset] = useState(() => ({ x: gridSettings.offsetX, y: gridSettings.offsetY }));
   const [combatMovementUsed, setCombatMovementUsed] = useState(0);
@@ -65,7 +68,6 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
   const [selectedToken, setSelectedToken] = useState<string | null>(null);
 
   // Obstacles
-  const [obstacles, setObstacles] = useState<Obstacle[]>(() => loadObstacles(mapId));
   const [obstacleTool, setObstacleTool] = useState<ObstacleTool>(null);
 
   // DM preview player vision
@@ -83,41 +85,13 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
     ? initiativeEntries[currentTurnIndex]?.tokenId
     : null;
 
-  const hasPersistedTokens = useRef(false);
-  const hasPersistedObstacles = useRef(false);
-  const hasPersistedGridSettings = useRef(false);
-
-  // Persist tokens & obstacles
   useEffect(() => {
-    if (!hasPersistedTokens.current) {
-      hasPersistedTokens.current = true;
-      return;
-    }
-
-    replaceMapTokens(mapId, tokens);
-  }, [tokens, mapId]);
+    setGridSettings(mapSnapshot.gridSettings);
+  }, [mapSnapshot.gridSettings]);
 
   useEffect(() => {
-    if (!hasPersistedObstacles.current) {
-      hasPersistedObstacles.current = true;
-      return;
-    }
-
-    replaceMapObstacles(mapId, obstacles);
-  }, [obstacles, mapId]);
-
-  useEffect(() => {
-    if (!hasPersistedGridSettings.current) {
-      hasPersistedGridSettings.current = true;
-      return;
-    }
-
-    saveMapGridSettings(mapId, {
-      ...gridSettings,
-      offsetX: gridOffset.x,
-      offsetY: gridOffset.y,
-    });
-  }, [gridSettings, gridOffset, mapId]);
+    setGridOffset({ x: mapSnapshot.gridSettings.offsetX, y: mapSnapshot.gridSettings.offsetY });
+  }, [mapSnapshot.gridSettings.offsetX, mapSnapshot.gridSettings.offsetY]);
 
   const handleImgLoad = () => {
     if (imgRef.current) {
@@ -152,19 +126,43 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
   }, [gridOffset.x, gridOffset.y, gridSize]);
 
   const updateGridSettings = useCallback((updater: (current: GridSettings) => GridSettings) => {
-    setGridSettings(current => updater(current));
-  }, []);
+    const next = updater({
+      ...mapSnapshot.gridSettings,
+      offsetX: gridOffset.x,
+      offsetY: gridOffset.y,
+    });
+    dispatch({ type: 'map:grid_update', gridSettings: next });
+  }, [dispatch, gridOffset.x, gridOffset.y, mapSnapshot.gridSettings]);
 
   const nudgeGrid = useCallback((axis: 'x' | 'y', delta: number) => {
-    setGridOffset(current => ({
-      ...current,
-      [axis]: current[axis] + delta,
-    }));
-  }, []);
+    const nextOffset = {
+      x: gridOffset.x + (axis === 'x' ? delta : 0),
+      y: gridOffset.y + (axis === 'y' ? delta : 0),
+    };
+    dispatch({
+      type: 'map:grid_update',
+      gridSettings: {
+        ...mapSnapshot.gridSettings,
+        offsetX: nextOffset.x,
+        offsetY: nextOffset.y,
+      },
+    });
+  }, [dispatch, gridOffset.x, gridOffset.y, mapSnapshot.gridSettings]);
 
   const resetGridAlignment = useCallback(() => {
-    setGridOffset(DEFAULT_GRID_OFFSET);
-  }, []);
+    dispatch({
+      type: 'map:grid_update',
+      gridSettings: {
+        ...mapSnapshot.gridSettings,
+        offsetX: DEFAULT_GRID_OFFSET.x,
+        offsetY: DEFAULT_GRID_OFFSET.y,
+      },
+    });
+  }, [dispatch, mapSnapshot.gridSettings]);
+
+  const handleObstaclesChange = useCallback((nextObstacles: Obstacle[]) => {
+    dispatch({ type: 'map:obstacles_replace', obstacles: nextObstacles });
+  }, [dispatch]);
 
   const clampZoom = useCallback((value: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value)), []);
 
@@ -231,17 +229,20 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
     const mouseX = (e.clientX - rect.left - pan.x) / zoom;
     const mouseY = (e.clientY - rect.top - pan.y) / zoom;
 
-    let newX = mouseX - dragOffset.x;
-    let newY = mouseY - dragOffset.y;
+    const newX = mouseX - dragOffset.x;
+    const newY = mouseY - dragOffset.y;
 
     if (showGrid) {
-      newX = snapToGrid(newX, 'x') + gridSize / 2;
-      newY = snapToGrid(newY, 'y') + gridSize / 2;
+      const nextCell = getCellFromPoint(newX, newY, {
+        ...gridSettings,
+        offsetX: gridOffset.x,
+        offsetY: gridOffset.y,
+      });
+      dispatch({ type: 'map:token_move_cell', tokenId: draggingToken, cell: nextCell });
+      return;
     }
 
-    setTokens(prev => prev.map(t =>
-      t.id === draggingToken ? { ...t, x: newX, y: newY } : t
-    ));
+    dispatch({ type: 'map:token_move', tokenId: draggingToken, x: newX, y: newY });
   };
 
   const handleTokenPointerUp = () => {
@@ -264,8 +265,17 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
     let newX = mouseX;
     let newY = mouseY;
     if (showGrid) {
-      newX = snapToGrid(newX, 'x') + gridSize / 2;
-      newY = snapToGrid(newY, 'y') + gridSize / 2;
+      const nextCell = getCellFromPoint(newX, newY, {
+        ...gridSettings,
+        offsetX: gridOffset.x,
+        offsetY: gridOffset.y,
+      });
+      const snappedCenter = {
+        x: gridOffset.x + (nextCell.col * gridSize) + gridSize / 2,
+        y: gridOffset.y + (nextCell.row * gridSize) + gridSize / 2,
+      };
+      newX = snappedCenter.x;
+      newY = snappedCenter.y;
     }
 
     // Check movement blocking
@@ -291,17 +301,24 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
   };
 
   const moveToken = (tokenId: string, newX: number, newY: number) => {
-    setTokens(prev => prev.map(t =>
-      t.id === tokenId ? { ...t, x: newX, y: newY } : t
-    ));
+    if (showGrid) {
+      dispatch({
+        type: 'map:token_move_cell',
+        tokenId,
+        cell: getCellFromPoint(newX, newY, {
+          ...gridSettings,
+          offsetX: gridOffset.x,
+          offsetY: gridOffset.y,
+        }),
+      });
+      return;
+    }
+
+    dispatch({ type: 'map:token_move', tokenId, x: newX, y: newY });
   };
 
   const damageToken = (tokenId: string, damage: number) => {
-    setTokens(prev => prev.map(t => {
-      if (t.id !== tokenId) return t;
-      const currentHp = t.hp ?? t.maxHp ?? 10;
-      return { ...t, hp: Math.max(0, currentHp - damage) };
-    }));
+    dispatch({ type: 'map:token_damage', tokenId, damage });
   };
 
   const addCharacterToken = (char: Character) => {
@@ -317,7 +334,7 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
       maxHp: char.maxHp,
       visionRadius: DEFAULT_VISION_CELLS * gridSize,
     };
-    setTokens(prev => [...prev, token]);
+    dispatch({ type: 'map:token_upsert', token });
     setShowAddMenu(false);
   };
 
@@ -332,19 +349,25 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
       hp: preset.hp,
       maxHp: preset.hp,
     };
-    setTokens(prev => [...prev, token]);
+    dispatch({ type: 'map:token_upsert', token });
     setShowAddMenu(false);
   };
 
   const removeToken = (id: string) => {
-    setTokens(prev => prev.filter(t => t.id !== id));
+    dispatch({ type: 'map:token_remove', tokenId: id });
     if (selectedToken === id) setSelectedToken(null);
   };
 
   const updateTokenVision = (id: string, radiusCells: number) => {
-    setTokens(prev => prev.map(t =>
-      t.id === id ? { ...t, visionRadius: radiusCells * gridSize } : t
-    ));
+    const token = tokens.find(t => t.id === id);
+    if (!token) return;
+    dispatch({
+      type: 'map:token_upsert',
+      token: {
+        ...token,
+        visionRadius: radiusCells * gridSize,
+      },
+    });
   };
 
   const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
@@ -637,7 +660,7 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
             {/* Obstacle layer */}
             <ObstacleLayer
               obstacles={obstacles}
-              setObstacles={setObstacles}
+              setObstacles={handleObstaclesChange}
               tool={obstacleTool}
               imgSize={imgSize}
               zoom={zoom}
@@ -746,6 +769,7 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
               >
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
                 {t.label}
+                {showGrid && <span className="text-[8px] text-muted-foreground">[{getCellLabelFromPoint(t.x, t.y, { ...gridSettings, offsetX: gridOffset.x, offsetY: gridOffset.y })}]</span>}
                 {t.hp !== undefined && <span className="text-[8px]">({t.hp}HP)</span>}
                 {isDM && (
                   <button onClick={(e) => { e.stopPropagation(); removeToken(t.id); }} className="hover:text-destructive">
@@ -798,6 +822,11 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
             <p className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold mb-1">
               Vision — {currentToken.label}
             </p>
+            {showGrid && (
+              <p className="text-[9px] font-mono text-muted-foreground mb-2">
+                Cell {getCellLabelFromPoint(currentToken.x, currentToken.y, { ...gridSettings, offsetX: gridOffset.x, offsetY: gridOffset.y })}
+              </p>
+            )}
             <div className="flex items-center gap-1">
               <button
                 onClick={() => updateTokenVision(currentToken.id, Math.max(1, ((currentToken.visionRadius ?? DEFAULT_VISION_CELLS * gridSize) / gridSize) - 2))}
