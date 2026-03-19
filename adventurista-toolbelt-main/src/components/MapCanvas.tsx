@@ -777,7 +777,6 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
             allTokens={tokens}
             gridSize={gridSize}
             ftPerCell={ftPerCell}
-            onMoveToken={moveToken}
             onDamageToken={damageToken}
             onEndTurn={() => {
               setCombatMovementUsed(0);

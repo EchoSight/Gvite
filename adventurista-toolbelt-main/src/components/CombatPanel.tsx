@@ -1,16 +1,33 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Footprints, Swords, Shield, XCircle, Check, ChevronDown } from 'lucide-react';
+import {
+  Footprints,
+  Swords,
+  Shield,
+  XCircle,
+  Check,
+  ChevronDown,
+  Sparkles,
+  Zap,
+  HandHelping,
+} from 'lucide-react';
 import { MapToken } from './MapCanvas';
 import { getCharacters } from '@/lib/store';
 import { getModifier, getEquippedAC, getEquippedWeapons, EquipmentItem } from '@/lib/types';
+import {
+  applyTurnAction,
+  CORE_TURN_ACTIONS,
+  createCombatTurnState,
+  getTurnMovementLimit,
+  type CombatTurnState,
+  type CoreTurnAction,
+} from '@/lib/combat';
 
 interface CombatPanelProps {
   token: MapToken;
   allTokens: MapToken[];
   gridSize: number;
   ftPerCell: number;
-  onMoveToken: (tokenId: string, newX: number, newY: number) => void;
   onDamageToken: (tokenId: string, damage: number) => void;
   onEndTurn: () => void;
   isCurrentTurn: boolean;
@@ -31,12 +48,16 @@ interface AttackResult {
   weaponName: string;
 }
 
+const RESOURCE_STYLES: Record<'ready' | 'spent', string> = {
+  ready: 'border-secondary/50 bg-secondary/10 text-secondary',
+  spent: 'border-border bg-muted/40 text-muted-foreground',
+};
+
 export function CombatPanel({
   token,
   allTokens,
   gridSize,
   ftPerCell,
-  onMoveToken,
   onDamageToken,
   onEndTurn,
   isCurrentTurn,
@@ -46,20 +67,32 @@ export function CombatPanel({
   combatMoving,
 }: CombatPanelProps) {
   const [mode, setMode] = useState<'idle' | 'moving' | 'attacking'>('idle');
-  const [hasAttacked, setHasAttacked] = useState(false);
   const [lastAttack, setLastAttack] = useState<AttackResult | null>(null);
   const [selectedWeapon, setSelectedWeapon] = useState<EquipmentItem | null>(null);
   const [showWeaponSelect, setShowWeaponSelect] = useState(false);
+  const [turnState, setTurnState] = useState<CombatTurnState>(() => createCombatTurnState());
+
+  useEffect(() => {
+    setMode('idle');
+    setLastAttack(null);
+    setSelectedWeapon(null);
+    setShowWeaponSelect(false);
+    setTurnState(createCombatTurnState());
+    onSetCombatMoving(false);
+    onSetMovementUsed(0);
+  }, [token.id, onSetCombatMoving, onSetMovementUsed]);
 
   const characters = getCharacters();
   const charData = characters.find(c => c.name === token.label);
-  const maxMovement = charData?.speed || 30;
+  const baseMovement = charData?.speed || 30;
+  const maxMovement = getTurnMovementLimit(baseMovement, turnState);
   const remainingFt = Math.max(0, maxMovement - movementUsed);
+  const hasAction = turnState.actionAvailable;
+  const hasBonusAction = turnState.bonusActionAvailable;
+  const hasReaction = turnState.reactionAvailable;
 
-  // Get equipped weapons for this character
   const equippedWeapons = charData ? getEquippedWeapons(charData) : [];
 
-  // Unarmed strike fallback
   const unarmedStrike: EquipmentItem = {
     id: 'unarmed',
     name: 'Unarmed Strike',
@@ -73,11 +106,26 @@ export function CombatPanel({
   };
 
   const availableWeapons = equippedWeapons.length > 0 ? equippedWeapons : [unarmedStrike];
-
-  // Get enemies (opposite type)
   const enemies = allTokens.filter(t => t.id !== token.id && t.type !== token.type);
 
+  const groupedCoreActions = useMemo(() => ({
+    action: CORE_TURN_ACTIONS.filter(action => action.type === 'action'),
+    bonus: CORE_TURN_ACTIONS.filter(action => action.type === 'bonus'),
+    reaction: CORE_TURN_ACTIONS.filter(action => action.type === 'reaction'),
+  }), []);
+
+  const handleQuickAction = (action: CoreTurnAction) => {
+    setTurnState(current => applyTurnAction(current, action, token.label));
+    setMode('idle');
+    setShowWeaponSelect(false);
+    if (action.id !== 'dash') {
+      onSetCombatMoving(false);
+    }
+  };
+
   const performAttack = (targetId: string) => {
+    if (!hasAction) return;
+
     const weapon = selectedWeapon || availableWeapons[0];
     if (!weapon) return;
 
@@ -87,7 +135,6 @@ export function CombatPanel({
     const targetChar = characters.find(c => c.name === target.label);
     const targetAC = targetChar ? getEquippedAC(targetChar) : (target.type === 'monster' ? 10 + Math.floor(Math.random() * 6) : 10);
 
-    // Attack roll: d20 + ability mod + weapon bonus
     const attackDie = Math.floor(Math.random() * 20) + 1;
     let attackMod = 0;
     if (charData) {
@@ -134,7 +181,12 @@ export function CombatPanel({
       natural1,
       weaponName: weapon.name,
     });
-    setHasAttacked(true);
+    setTurnState(current => ({
+      ...current,
+      actionAvailable: false,
+      actionLabel: `Attack (${weapon.name})`,
+      turnLog: [`${token.label} attacked ${target.label} with ${weapon.name}.`, ...current.turnLog],
+    }));
     setSelectedWeapon(null);
     setShowWeaponSelect(false);
     setMode('idle');
@@ -159,23 +211,53 @@ export function CombatPanel({
         </span>
       </div>
 
-      {/* Movement info */}
-      <div className="px-3 py-2 border-b border-border">
-        <div className="flex items-center justify-between">
-          <span className="text-[9px] uppercase tracking-widest text-muted-foreground">Movement</span>
-          <span className="font-mono text-xs text-foreground">
-            {remainingFt}ft / {maxMovement}ft
-          </span>
+      <div className="px-3 py-2 border-b border-border space-y-2">
+        <div className="grid grid-cols-3 gap-1">
+          <div className={`rounded-sm border px-2 py-1 ${hasAction ? RESOURCE_STYLES.ready : RESOURCE_STYLES.spent}`}>
+            <p className="text-[8px] uppercase tracking-widest">Action</p>
+            <p className="font-mono text-[10px] truncate">{turnState.actionLabel ?? (hasAction ? 'Ready' : 'Spent')}</p>
+          </div>
+          <div className={`rounded-sm border px-2 py-1 ${hasBonusAction ? RESOURCE_STYLES.ready : RESOURCE_STYLES.spent}`}>
+            <p className="text-[8px] uppercase tracking-widest">Bonus</p>
+            <p className="font-mono text-[10px] truncate">{turnState.bonusActionLabel ?? (hasBonusAction ? 'Ready' : 'Spent')}</p>
+          </div>
+          <div className={`rounded-sm border px-2 py-1 ${hasReaction ? RESOURCE_STYLES.ready : RESOURCE_STYLES.spent}`}>
+            <p className="text-[8px] uppercase tracking-widest">Reaction</p>
+            <p className="font-mono text-[10px] truncate">{turnState.reactionLabel ?? (hasReaction ? 'Ready' : 'Spent')}</p>
+          </div>
         </div>
-        <div className="w-full bg-muted rounded-full h-1.5 mt-1">
-          <div
-            className="bg-secondary rounded-full h-1.5 transition-all"
-            style={{ width: `${Math.max(0, (remainingFt / maxMovement)) * 100}%` }}
-          />
+
+        <div>
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] uppercase tracking-widest text-muted-foreground">Movement</span>
+            <span className="font-mono text-xs text-foreground">
+              {remainingFt}ft / {maxMovement}ft
+            </span>
+          </div>
+          <div className="w-full bg-muted rounded-full h-1.5 mt-1">
+            <div
+              className="bg-secondary rounded-full h-1.5 transition-all"
+              style={{ width: `${Math.max(0, remainingFt / maxMovement) * 100}%` }}
+            />
+          </div>
+          {turnState.dashActive && (
+            <p className="text-[9px] uppercase tracking-widest text-secondary mt-1">
+              Dash active: movement doubled this turn.
+            </p>
+          )}
         </div>
+
+        {turnState.conditions.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {turnState.conditions.map(condition => (
+              <span key={condition} className="px-1.5 py-0.5 rounded-full border border-accent/30 bg-accent/10 text-[9px] uppercase tracking-widest text-accent">
+                {condition}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Actions */}
       <div className="p-2 flex flex-col gap-1">
         <button
           onClick={() => {
@@ -192,7 +274,6 @@ export function CombatPanel({
           {combatMoving ? 'Click map to move' : `Move (${remainingFt}ft left)`}
         </button>
 
-        {/* Attack with weapon selection */}
         <button
           onClick={() => {
             if (mode === 'attacking') {
@@ -203,137 +284,163 @@ export function CombatPanel({
               setShowWeaponSelect(true);
             }
           }}
-          disabled={hasAttacked}
+          disabled={!hasAction}
           className={`tactical-card !p-2 flex items-center gap-2 text-[10px] uppercase tracking-wider font-bold transition-colors ${
             mode === 'attacking' ? 'border-accent text-accent' : ''
           } disabled:opacity-30`}
         >
           <Swords className="w-3 h-3" />
-          {hasAttacked ? 'Already attacked' : mode === 'attacking' ? 'Select weapon & target' : 'Attack'}
+          {!hasAction ? 'Action spent' : mode === 'attacking' ? 'Select weapon & target' : 'Attack'}
         </button>
 
-        {/* Weapon selection */}
         <AnimatePresence>
           {mode === 'attacking' && showWeaponSelect && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="space-y-1 pl-2"
+              className="border border-border rounded-sm p-2 mt-1 space-y-2"
             >
-              <p className="text-[9px] uppercase tracking-widest text-muted-foreground py-1">Choose Weapon</p>
-              {availableWeapons.map(w => (
+              <div>
                 <button
-                  key={w.id}
-                  onClick={() => { setSelectedWeapon(w); setShowWeaponSelect(false); }}
-                  className={`w-full tactical-card !p-2 flex items-center gap-2 text-[10px] font-mono text-foreground hover:border-accent ${
-                    selectedWeapon?.id === w.id ? 'border-accent text-accent' : ''
+                  onClick={() => setSelectedWeapon(null)}
+                  className={`w-full text-left px-2 py-1.5 rounded-sm text-[10px] font-mono transition-colors ${
+                    !selectedWeapon ? 'bg-secondary/20 text-secondary border border-secondary/40' : 'hover:bg-muted/50 border border-transparent'
                   }`}
                 >
-                  <Swords className="w-3 h-3 text-muted-foreground" />
-                  <span className="flex-1 text-left">{w.name}</span>
-                  <span className="text-[8px] text-muted-foreground">
-                    1d{w.damageDie || 1}
-                    {(w.damageBonus || 0) > 0 ? `+${w.damageBonus}` : ''}
-                  </span>
+                  Default weapon ({availableWeapons[0]?.name})
                 </button>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Target selection (shown after weapon is chosen) */}
-        <AnimatePresence>
-          {mode === 'attacking' && !showWeaponSelect && (selectedWeapon || availableWeapons.length === 1) && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="space-y-1 pl-2"
-            >
-              <div className="flex items-center justify-between py-1">
-                <p className="text-[9px] uppercase tracking-widest text-muted-foreground">
-                  Attacking with: <span className="text-foreground">{(selectedWeapon || availableWeapons[0])?.name}</span>
-                </p>
-                <button
-                  onClick={() => setShowWeaponSelect(true)}
-                  className="text-[8px] text-muted-foreground hover:text-foreground"
-                >
-                  <ChevronDown className="w-3 h-3" />
-                </button>
-              </div>
-              {enemies.length === 0 ? (
-                <p className="text-[9px] text-muted-foreground py-1">No targets</p>
-              ) : (
-                enemies.map(enemy => (
+                {availableWeapons.map(weapon => (
                   <button
-                    key={enemy.id}
-                    onClick={() => performAttack(enemy.id)}
-                    className="w-full tactical-card !p-2 flex items-center gap-2 text-[10px] font-mono text-foreground hover:border-accent"
+                    key={weapon.id}
+                    onClick={() => setSelectedWeapon(weapon)}
+                    className={`w-full mt-1 text-left px-2 py-1.5 rounded-sm text-[10px] font-mono transition-colors flex items-center justify-between ${
+                      selectedWeapon?.id === weapon.id ? 'bg-secondary/20 text-secondary border border-secondary/40' : 'hover:bg-muted/50 border border-transparent'
+                    }`}
                   >
-                    <div
-                      className="w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-bold text-background"
-                      style={{ backgroundColor: enemy.color }}
-                    >
-                      {enemy.label[0]}
-                    </div>
-                    {enemy.label}
-                    {enemy.hp !== undefined && (
-                      <span className="ml-auto text-[9px] text-muted-foreground">{enemy.hp}HP</span>
-                    )}
+                    <span>{weapon.name}</span>
+                    <span className="text-muted-foreground">1d{weapon.damageDie || 4}</span>
                   </button>
-                ))
-              )}
+                ))}
+              </div>
+
+              <div className="border-t border-border pt-2">
+                <p className="text-[9px] uppercase tracking-widest text-muted-foreground mb-1">Targets</p>
+                {enemies.length === 0 ? (
+                  <p className="text-[10px] text-muted-foreground">No enemies on the map.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {enemies.map(enemy => {
+                      const dx = Math.abs(enemy.x - token.x) / gridSize;
+                      const dy = Math.abs(enemy.y - token.y) / gridSize;
+                      const distanceFt = Math.round(Math.max(dx, dy) * ftPerCell);
+                      return (
+                        <button
+                          key={enemy.id}
+                          onClick={() => performAttack(enemy.id)}
+                          className="w-full text-left px-2 py-1.5 rounded-sm text-[10px] font-mono border border-border hover:border-accent hover:text-accent transition-colors flex items-center justify-between"
+                        >
+                          <span>{enemy.label}</span>
+                          <span className="text-muted-foreground">{distanceFt}ft</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Attack result */}
-        <AnimatePresence>
-          {lastAttack && (
-            <motion.div
-              initial={{ opacity: 0, y: -5 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className={`tactical-card !p-2 text-[10px] font-mono ${
-                lastAttack.hit ? 'border-secondary' : 'border-destructive'
-              }`}
-            >
-              <div className="flex items-center gap-1 mb-1">
-                {lastAttack.hit ? (
-                  <Check className="w-3 h-3 text-secondary" />
-                ) : (
-                  <XCircle className="w-3 h-3 text-destructive" />
-                )}
-                <span className={lastAttack.hit ? 'text-secondary' : 'text-destructive'}>
-                  {lastAttack.natural20 ? 'CRITICAL HIT!' : lastAttack.natural1 ? 'CRITICAL MISS!' : lastAttack.hit ? 'HIT!' : 'MISS!'}
-                </span>
-              </div>
-              <p className="text-muted-foreground">
-                {lastAttack.weaponName}: {lastAttack.attackRoll} vs AC {lastAttack.targetAC} ({lastAttack.targetName})
-              </p>
-              {lastAttack.hit && (
-                <p className="text-foreground font-bold">
-                  {lastAttack.damageRoll} damage{lastAttack.natural20 ? ' (crit!)' : ''}
+        <div className="mt-1 border border-border rounded-sm p-2 space-y-2">
+          <div className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-muted-foreground">
+            <Sparkles className="w-3 h-3" /> Core D&D turn options
+          </div>
+
+          <div className="space-y-1">
+            {groupedCoreActions.action.map(action => (
+              <button
+                key={action.id}
+                onClick={() => handleQuickAction(action)}
+                disabled={!hasAction}
+                className="w-full text-left px-2 py-1.5 rounded-sm border border-border hover:border-secondary hover:text-secondary transition-colors disabled:opacity-30"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] uppercase tracking-widest font-bold">{action.name}</span>
+                  <Shield className="w-3 h-3 text-muted-foreground" />
+                </div>
+                <p className="text-[10px] text-muted-foreground normal-case tracking-normal mt-1">{action.description}</p>
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-1">
+            {groupedCoreActions.bonus.map(action => (
+              <button
+                key={action.id}
+                onClick={() => handleQuickAction(action)}
+                disabled={!hasBonusAction}
+                className="text-left px-2 py-1.5 rounded-sm border border-border hover:border-accent hover:text-accent transition-colors disabled:opacity-30"
+              >
+                <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest font-bold">
+                  <Zap className="w-3 h-3" /> {action.name}
+                </div>
+                <p className="text-[10px] text-muted-foreground normal-case tracking-normal mt-1">{action.description}</p>
+              </button>
+            ))}
+            {groupedCoreActions.reaction.map(action => (
+              <button
+                key={action.id}
+                onClick={() => handleQuickAction(action)}
+                disabled={!hasReaction}
+                className="text-left px-2 py-1.5 rounded-sm border border-border hover:border-foreground hover:text-foreground transition-colors disabled:opacity-30"
+              >
+                <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest font-bold">
+                  <HandHelping className="w-3 h-3" /> {action.name}
+                </div>
+                <p className="text-[10px] text-muted-foreground normal-case tracking-normal mt-1">{action.description}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {lastAttack && (
+          <div className={`border rounded-sm p-2 text-[10px] font-mono mt-1 ${lastAttack.hit ? 'border-secondary/40 bg-secondary/10' : 'border-border bg-muted/30'}`}>
+            <div className="flex items-center gap-1 uppercase tracking-widest mb-1">
+              {lastAttack.hit ? <Check className="w-3 h-3 text-secondary" /> : <XCircle className="w-3 h-3 text-destructive" />}
+              {lastAttack.hit ? 'Attack landed' : 'Attack missed'}
+            </div>
+            <p>{lastAttack.weaponName} vs {lastAttack.targetName}</p>
+            <p>Attack roll {lastAttack.attackRoll} vs AC {lastAttack.targetAC}</p>
+            {lastAttack.natural20 && <p className="text-secondary">Critical hit!</p>}
+            {lastAttack.natural1 && <p className="text-destructive">Natural 1.</p>}
+            {lastAttack.hit && <p>Damage: {lastAttack.damageRoll}</p>}
+          </div>
+        )}
+
+        {turnState.turnLog.length > 0 && (
+          <div className="border border-border rounded-sm p-2 mt-1">
+            <div className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-muted-foreground mb-2">
+              <ChevronDown className="w-3 h-3" /> Turn log
+            </div>
+            <div className="space-y-1">
+              {turnState.turnLog.slice(0, 4).map(entry => (
+                <p key={entry} className="text-[10px] font-mono text-foreground/90">
+                  {entry}
                 </p>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+              ))}
+            </div>
+          </div>
+        )}
 
         <button
           onClick={() => {
             setMode('idle');
-            onSetMovementUsed(0);
-            setHasAttacked(false);
-            setLastAttack(null);
-            setSelectedWeapon(null);
             onSetCombatMoving(false);
             onEndTurn();
           }}
-          className="tactical-card !p-2 flex items-center gap-2 text-[10px] uppercase tracking-wider font-bold border-muted-foreground/30 hover:border-foreground"
+          className="mt-1 tactical-card !p-2 flex items-center justify-center gap-2 text-[10px] uppercase tracking-wider font-bold border-secondary text-secondary"
         >
-          <Shield className="w-3 h-3" />
           End Turn
         </button>
       </div>
