@@ -21,6 +21,7 @@ npm run dev
 - `npm run dev` - start the Vite development server
 - `npm run host:dev` - start the DM-hosted multiplayer development server
 - `npm run build` - create a production build
+- `npm run build:pages` - create a GitHub Pages-friendly static build
 - `npm run preview` - preview the production build locally
 - `npm run lint` - run ESLint
 - `npm run test` - run the Vitest suite once
@@ -77,3 +78,19 @@ Optional environment overrides:
 - `CAMPAIGN_ID`
 - `CAMPAIGN_NAME`
 - `HOST_ROOT_DIR`
+
+
+## GitHub Pages deployment
+
+This repo includes a GitHub Actions workflow that deploys the app from `adventurista-toolbelt-main/` to GitHub Pages.
+
+For a local Pages-style build, run:
+
+```sh
+npm run build:pages
+```
+
+Notes:
+
+- The app uses `HashRouter` so route navigation works on GitHub Pages without custom rewrite rules.
+- The Pages workflow installs dependencies, builds the app, and uploads `dist/` instead of the whole repository.
