@@ -37,3 +37,20 @@ npm run dev
 ## Planning docs
 
 - [Desktop multiplayer architecture plan](docs/desktop-multiplayer-architecture.md)
+- [Multiplayer host scaffolding notes](src/server/README.md)
+- [Phase 2 multiplayer checklist](docs/phase-2-multiplayer-checklist.md)
+
+## Multiplayer scaffolding
+
+The repo now includes an initial host-side multiplayer scaffold:
+
+- SQLite-backed campaign repository (`src/server/sqliteCampaignRepository.ts`)
+- Filesystem asset storage (`src/server/fileAssetStorage.ts`)
+- HTTP + WebSocket host transport (`src/server/campaignHostServer.ts`)
+- Browser/client transport helper (`src/lib/networkCampaignSync.ts`)
+
+Run the node-focused checks with:
+
+```sh
+npm run test:node
+```

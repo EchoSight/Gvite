@@ -1,18 +1,30 @@
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapCanvas } from '@/components/MapCanvas';
 import type { MapEntry } from '@/lib/repositories';
 import { useMapCollectionSession } from '@/hooks/useMapSessions';
-import { Plus, X, Upload, Maximize2, ArrowLeft } from 'lucide-react';
+import { useMultiplayerSettings } from '@/hooks/useMultiplayerSettings';
+import { Plus, X, Upload, Maximize2, ArrowLeft, Plug, Server } from 'lucide-react';
 
 export default function Maps() {
-  const { snapshot, createMap, removeMap } = useMapCollectionSession();
+  const { snapshot, createMap, removeMap, status } = useMapCollectionSession();
+  const { settings, saveSettings } = useMultiplayerSettings();
   const { maps } = snapshot;
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [mapName, setMapName] = useState('');
   const [preview, setPreview] = useState<string | null>(null);
+  const [hostUrl, setHostUrl] = useState(settings.hostUrl);
+  const [campaignId, setCampaignId] = useState(settings.campaignId);
+  const [mode, setMode] = useState(settings.mode);
+  const [mapActionPending, setMapActionPending] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setHostUrl(settings.hostUrl);
+    setCampaignId(settings.campaignId);
+    setMode(settings.mode);
+  }, [settings]);
 
   const activeMap = maps.find(m => m.id === activeMapId);
 
@@ -31,7 +43,7 @@ export default function Maps() {
     reader.readAsDataURL(file);
   };
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
     if (!preview || !mapName.trim()) return;
     const entry: MapEntry = {
       id: `map-${Date.now()}`,
@@ -39,15 +51,41 @@ export default function Maps() {
       image: preview,
       createdAt: new Date().toISOString(),
     };
-    createMap(entry);
-    setUploading(false);
-    setMapName('');
-    setPreview(null);
+
+    try {
+      setMapActionPending(true);
+      await createMap(entry);
+      setUploading(false);
+      setMapName('');
+      setPreview(null);
+      if (fileRef.current) {
+        fileRef.current.value = '';
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to upload map.');
+    } finally {
+      setMapActionPending(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    removeMap(id);
-    if (activeMapId === id) setActiveMapId(null);
+  const handleDelete = async (id: string) => {
+    try {
+      setMapActionPending(true);
+      await removeMap(id);
+      if (activeMapId === id) setActiveMapId(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to delete map.');
+    } finally {
+      setMapActionPending(false);
+    }
+  };
+
+  const handleSaveConnection = () => {
+    saveSettings({
+      mode,
+      hostUrl,
+      campaignId,
+    });
   };
 
   if (activeMap) {
@@ -57,7 +95,12 @@ export default function Maps() {
           <button onClick={() => setActiveMapId(null)} className="text-muted-foreground hover:text-foreground">
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <h2 className="font-display text-sm text-foreground truncate">{activeMap.name}</h2>
+          <div className="min-w-0">
+            <h2 className="font-display text-sm text-foreground truncate">{activeMap.name}</h2>
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              {status.mode === 'hosted' ? `HOSTED SESSION · ${status.state}` : 'LOCAL SESSION'}
+            </p>
+          </div>
         </div>
         <div className="flex-1 min-h-0">
           <MapCanvas mapImage={activeMap.image} mapId={activeMap.id} />
@@ -82,6 +125,70 @@ export default function Maps() {
         >
           {uploading ? <><X className="w-3 h-3" /> CANCEL</> : <><Plus className="w-3 h-3" /> UPLOAD MAP</>}
         </motion.button>
+      </div>
+
+      <div className="tactical-card mb-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-display text-sm text-foreground">MULTIPLAYER HOST CONNECTION</p>
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              {status.mode === 'hosted' ? `HOSTED · ${status.state}` : 'LOCAL-ONLY MODE'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+            {status.mode === 'hosted' ? <Server className="w-3 h-3" /> : <Plug className="w-3 h-3" />}
+            {status.error ? 'Error' : status.state}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <label className="space-y-1">
+            <span className="stat-label block">MODE</span>
+            <select
+              value={mode}
+              onChange={e => setMode(e.target.value === 'hosted' ? 'hosted' : 'local')}
+              className="w-full bg-transparent font-mono text-sm text-foreground outline-none border-b border-border pb-1"
+            >
+              <option value="local">Local</option>
+              <option value="hosted">Hosted</option>
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="stat-label block">HOST URL</span>
+            <input
+              value={hostUrl}
+              onChange={e => setHostUrl(e.target.value)}
+              placeholder="http://127.0.0.1:8787"
+              className="w-full bg-transparent font-mono text-sm text-foreground outline-none border-b border-border pb-1 placeholder:text-muted-foreground/50"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="stat-label block">CAMPAIGN ID</span>
+            <input
+              value={campaignId}
+              onChange={e => setCampaignId(e.target.value)}
+              placeholder="campaign-dev"
+              className="w-full bg-transparent font-mono text-sm text-foreground outline-none border-b border-border pb-1 placeholder:text-muted-foreground/50"
+            />
+          </label>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            Use Hosted mode to fetch maps from the DM host, upload map assets to the server, and stream live map updates over WebSocket.
+          </p>
+          <motion.button
+            onClick={handleSaveConnection}
+            className="border border-border rounded-sm px-3 py-2 text-[11px] uppercase tracking-widest font-bold hover:bg-foreground hover:text-background transition-colors"
+            whileTap={{ scale: 0.98 }}
+          >
+            SAVE CONNECTION
+          </motion.button>
+        </div>
+
+        {status.error && (
+          <p className="text-xs text-destructive">{status.error}</p>
+        )}
       </div>
 
       <AnimatePresence>
@@ -126,12 +233,12 @@ export default function Maps() {
                 )}
               </div>
               <motion.button
-                onClick={handleUpload}
-                disabled={!preview || !mapName.trim()}
+                onClick={() => void handleUpload()}
+                disabled={!preview || !mapName.trim() || mapActionPending}
                 className="w-full text-center text-[11px] uppercase tracking-widest font-bold border border-border rounded-sm py-2 hover:bg-foreground hover:text-background transition-colors disabled:opacity-30"
                 whileTap={{ scale: 0.98 }}
               >
-                UPLOAD MAP
+                {status.mode === 'hosted' ? 'UPLOAD MAP TO HOST' : 'UPLOAD MAP'}
               </motion.button>
             </div>
           </motion.div>
@@ -170,8 +277,9 @@ export default function Maps() {
                   </p>
                 </div>
                 <button
-                  onClick={(e) => { e.stopPropagation(); handleDelete(map.id); }}
-                  className="text-muted-foreground hover:text-destructive transition-colors"
+                  onClick={(e) => { e.stopPropagation(); void handleDelete(map.id); }}
+                  disabled={mapActionPending}
+                  className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30"
                 >
                   <X className="w-3 h-3" />
                 </button>

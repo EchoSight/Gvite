@@ -1,9 +1,10 @@
 import type { MapToken } from './types';
 import type { GridSettings, MapEntry } from './repositories';
 import type { Obstacle } from './obstacles';
-import type { CampaignEvent } from './campaignEvents';
+import type { CampaignEvent, CampaignEventInput } from './campaignEvents';
 import type { CampaignSyncAdapter } from './campaignSync';
 import type { KeyValueStore } from './storage';
+import type { CampaignSnapshot, MapStateSnapshot } from './campaignState';
 import { getCellCenter, type GridCell } from './gridCoordinates';
 import { campaignSync } from './campaignSync';
 import {
@@ -61,6 +62,95 @@ function isMapEventFor(event: CampaignEvent, mapId: string): boolean {
   }
 
   return event.type === 'map:created' && event.payload.map.id === mapId;
+}
+
+function buildMovedTokenSnapshot(snapshot: MapSnapshot, tokenId: string, x: number, y: number): MapToken[] {
+  return snapshot.tokens.map(token =>
+    token.id === tokenId ? { ...token, x, y } : token,
+  );
+}
+
+export function resolveMapIntent(snapshot: MapSnapshot, intent: MapIntent): CampaignEventInput {
+  switch (intent.type) {
+    case 'map:tokens_replace':
+      return { type: 'map:tokens_updated', source: 'local-ui', payload: { mapId: snapshot.mapId, tokens: intent.tokens } };
+    case 'map:token_move':
+      return {
+        type: 'map:tokens_updated',
+        source: 'local-ui',
+        payload: { mapId: snapshot.mapId, tokens: buildMovedTokenSnapshot(snapshot, intent.tokenId, intent.x, intent.y) },
+      };
+    case 'map:token_move_cell': {
+      const nextPosition = getCellCenter(intent.cell, snapshot.gridSettings);
+      return {
+        type: 'map:tokens_updated',
+        source: 'local-ui',
+        payload: { mapId: snapshot.mapId, tokens: buildMovedTokenSnapshot(snapshot, intent.tokenId, nextPosition.x, nextPosition.y) },
+      };
+    }
+    case 'map:token_damage':
+      return {
+        type: 'map:tokens_updated',
+        source: 'local-ui',
+        payload: {
+          mapId: snapshot.mapId,
+          tokens: snapshot.tokens.map(token => {
+            if (token.id !== intent.tokenId) return token;
+            const currentHp = token.hp ?? token.maxHp ?? 10;
+            return { ...token, hp: Math.max(0, currentHp - intent.damage) };
+          }),
+        },
+      };
+    case 'map:token_upsert': {
+      const existing = snapshot.tokens.some(token => token.id === intent.token.id);
+      return {
+        type: 'map:tokens_updated',
+        source: 'local-ui',
+        payload: {
+          mapId: snapshot.mapId,
+          tokens: existing
+            ? snapshot.tokens.map(token => token.id === intent.token.id ? intent.token : token)
+            : [...snapshot.tokens, intent.token],
+        },
+      };
+    }
+    case 'map:token_remove':
+      return {
+        type: 'map:tokens_updated',
+        source: 'local-ui',
+        payload: {
+          mapId: snapshot.mapId,
+          tokens: snapshot.tokens.filter(token => token.id !== intent.tokenId),
+        },
+      };
+    case 'map:grid_update':
+      return { type: 'map:grid_updated', source: 'local-ui', payload: { mapId: snapshot.mapId, gridSettings: intent.gridSettings } };
+    case 'map:obstacles_replace':
+      return { type: 'map:obstacles_updated', source: 'local-ui', payload: { mapId: snapshot.mapId, obstacles: intent.obstacles } };
+  }
+}
+
+export function mapCollectionSnapshotFromCampaign(snapshot: CampaignSnapshot): MapCollectionSnapshot {
+  return {
+    maps: snapshot.maps,
+    version: snapshot.campaign.version,
+  };
+}
+
+export function mapSnapshotFromCampaign(
+  snapshot: CampaignSnapshot,
+  mapId: string,
+  fallbackGridSettings: GridSettings,
+): MapSnapshot {
+  const mapState: MapStateSnapshot | undefined = snapshot.mapStates[mapId];
+
+  return {
+    mapId,
+    tokens: mapState?.tokens ?? [],
+    gridSettings: mapState?.gridSettings ?? fallbackGridSettings,
+    obstacles: mapState?.obstacles ?? [],
+    version: snapshot.campaign.version,
+  };
 }
 
 export class MapCollectionSession {
@@ -145,75 +235,18 @@ export class MapSession {
   }
 
   dispatch(intent: MapIntent): void {
-    const snapshot = this.getSnapshot();
+    const event = resolveMapIntent(this.getSnapshot(), intent);
 
-    switch (intent.type) {
-      case 'map:tokens_replace': {
-        replaceMapTokens(this.mapId, intent.tokens, this.options);
+    switch (event.type) {
+      case 'map:tokens_updated':
+        replaceMapTokens(this.mapId, event.payload.tokens, this.options);
         return;
-      }
-      case 'map:token_move': {
-        replaceMapTokens(
-          this.mapId,
-          snapshot.tokens.map(token =>
-            token.id === intent.tokenId ? { ...token, x: intent.x, y: intent.y } : token,
-          ),
-          this.options,
-        );
+      case 'map:grid_updated':
+        saveMapGridSettings(this.mapId, event.payload.gridSettings, this.options);
         return;
-      }
-      case 'map:token_move_cell': {
-        const nextPosition = getCellCenter(intent.cell, snapshot.gridSettings);
-        replaceMapTokens(
-          this.mapId,
-          snapshot.tokens.map(token =>
-            token.id === intent.tokenId
-              ? { ...token, x: nextPosition.x, y: nextPosition.y }
-              : token,
-          ),
-          this.options,
-        );
+      case 'map:obstacles_updated':
+        replaceMapObstacles(this.mapId, event.payload.obstacles, this.options);
         return;
-      }
-      case 'map:token_damage': {
-        replaceMapTokens(
-          this.mapId,
-          snapshot.tokens.map(token => {
-            if (token.id !== intent.tokenId) return token;
-            const currentHp = token.hp ?? token.maxHp ?? 10;
-            return { ...token, hp: Math.max(0, currentHp - intent.damage) };
-          }),
-          this.options,
-        );
-        return;
-      }
-      case 'map:token_upsert': {
-        const existing = snapshot.tokens.some(token => token.id === intent.token.id);
-        replaceMapTokens(
-          this.mapId,
-          existing
-            ? snapshot.tokens.map(token => token.id === intent.token.id ? intent.token : token)
-            : [...snapshot.tokens, intent.token],
-          this.options,
-        );
-        return;
-      }
-      case 'map:token_remove': {
-        replaceMapTokens(
-          this.mapId,
-          snapshot.tokens.filter(token => token.id !== intent.tokenId),
-          this.options,
-        );
-        return;
-      }
-      case 'map:grid_update': {
-        saveMapGridSettings(this.mapId, intent.gridSettings, this.options);
-        return;
-      }
-      case 'map:obstacles_replace': {
-        replaceMapObstacles(this.mapId, intent.obstacles, this.options);
-        return;
-      }
     }
   }
 
