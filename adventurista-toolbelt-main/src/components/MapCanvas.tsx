@@ -270,6 +270,10 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
   // Canvas click for combat movement
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (!combatMoving || !currentTurnId) return;
+
+    const activeToken = tokens.find(t => t.id === currentTurnId);
+    if (!activeToken) return;
+    if (!isDM && activeToken.type === 'monster') return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
@@ -283,29 +287,25 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
       newY = snapToGrid(newY, 'y') + gridSize / 2;
     }
 
-    const currentToken = tokens.find(t => t.id === currentTurnId);
-    if (currentToken) {
-      // Check movement blocking
-      if (isMovementBlocked(currentToken.x, currentToken.y, newX, newY, obstacles)) {
-        return; // Path is blocked by an obstacle
-      }
-
-      const dx = Math.abs(newX - currentToken.x) / gridSize;
-      const dy = Math.abs(newY - currentToken.y) / gridSize;
-      const cellsMoved = Math.max(dx, dy);
-      const ftMoved = Math.round(cellsMoved) * ftPerCell;
-
-      const charData = characters.current.find(c => c.name === currentToken.label);
-      const maxMovement = charData?.speed || 30;
-      const remaining = maxMovement - combatMovementUsed;
-
-      if (ftMoved > remaining) {
-        return;
-      }
-
-      setCombatMovementUsed(prev => prev + ftMoved);
+    // Check movement blocking
+    if (isMovementBlocked(activeToken.x, activeToken.y, newX, newY, obstacles)) {
+      return; // Path is blocked by an obstacle
     }
 
+    const dx = Math.abs(newX - activeToken.x) / gridSize;
+    const dy = Math.abs(newY - activeToken.y) / gridSize;
+    const cellsMoved = Math.max(dx, dy);
+    const ftMoved = Math.round(cellsMoved) * ftPerCell;
+
+    const charData = characters.current.find(c => c.name === activeToken.label);
+    const maxMovement = charData?.speed || 30;
+    const remaining = maxMovement - combatMovementUsed;
+
+    if (ftMoved > remaining) {
+      return;
+    }
+
+    setCombatMovementUsed(prev => prev + ftMoved);
     moveToken(currentTurnId, newX, newY);
   };
 
@@ -386,6 +386,13 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
 
   const currentToken = selectedToken ? tokens.find(t => t.id === selectedToken) : null;
   const currentTurnToken = currentTurnId ? tokens.find(t => t.id === currentTurnId) : null;
+  const canManageCurrentTurn = Boolean(currentTurnToken) && (isDM || currentTurnToken.type === 'character');
+
+  useEffect(() => {
+    if (!canManageCurrentTurn) {
+      setCombatMoving(false);
+    }
+  }, [canManageCurrentTurn]);
 
   return (
     <div className="relative w-full h-full flex">
@@ -771,7 +778,7 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
           isDM={isDM}
         />
 
-        {combatActive && currentTurnToken && (
+        {combatActive && currentTurnToken && canManageCurrentTurn && (
           <CombatPanel
             token={currentTurnToken}
             allTokens={tokens}
