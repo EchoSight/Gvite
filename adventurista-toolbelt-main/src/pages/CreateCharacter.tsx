@@ -6,7 +6,7 @@ import {
   DndClass, DndRace, AbilityName,
   AbilityScore, EquipmentItem, CLASS_HIT_DIE, applyRaceAbilityBonuses, getEquippedAC, getModifier, getRaceAbilityBonuses, getRaceProfile
 } from '@/lib/types';
-import { addCharacter } from '@/lib/store';
+import { useCharacterCollectionSession } from '@/hooks/useCharacterSessions';
 import { StatBlock } from '@/components/StatBlock';
 import { EquipmentDrawer } from '@/components/EquipmentDrawer';
 import { EquipmentRow } from '@/components/EquipmentRow';
@@ -16,6 +16,7 @@ const HALF_ELF_ABILITY_OPTIONS = ABILITY_NAMES.filter(name => name !== 'CHA');
 
 export default function CreateCharacter() {
   const navigate = useNavigate();
+  const { createCharacter, status } = useCharacterCollectionSession();
   const [name, setName] = useState('');
   const [race, setRace] = useState(DND_RACES[0]);
   const [dndClass, setDndClass] = useState(DND_CLASSES[0]);
@@ -70,7 +71,7 @@ export default function CreateCharacter() {
     createdAt: new Date().toISOString(),
   });
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!name.trim()) return;
     const char: Character = {
       id: `char-${Date.now()}`,
@@ -87,7 +88,7 @@ export default function CreateCharacter() {
       equipment,
       createdAt: new Date().toISOString(),
     };
-    addCharacter(char);
+    await createCharacter(char);
     navigate(`/character/${char.id}`);
   };
 
@@ -111,7 +112,8 @@ export default function CreateCharacter() {
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6">
-      <h1 className="font-display text-base md:text-lg mb-4 md:mb-6 text-foreground">INITIATE CHARACTER BUILD.</h1>
+      <h1 className="font-display text-base md:text-lg mb-2 text-foreground">INITIATE CHARACTER BUILD.</h1>
+      <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-4 md:mb-6">{status.mode === 'hosted' ? `HOSTED CHARACTER SYNC · ${status.state}` : 'LOCAL CHARACTER STORAGE'}</p>
 
       {/* Identity */}
       <section className="mb-4 md:mb-6">

@@ -3,12 +3,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MapCanvas } from '@/components/MapCanvas';
 import type { MapEntry } from '@/lib/repositories';
 import { useMapCollectionSession } from '@/hooks/useMapSessions';
-import { useMultiplayerSettings } from '@/hooks/useMultiplayerSettings';
+import { useMultiplayerSession } from '@/lib/MultiplayerSessionContext';
+import { useCharacterCollectionSession } from '@/hooks/useCharacterSessions';
 import { Plus, X, Upload, Maximize2, ArrowLeft, Plug, Server } from 'lucide-react';
 
 export default function Maps() {
   const { snapshot, createMap, removeMap, status } = useMapCollectionSession();
-  const { settings, saveSettings } = useMultiplayerSettings();
+  const { settings, saveSettings } = useMultiplayerSession();
+  const { snapshot: characterSnapshot } = useCharacterCollectionSession();
   const { maps } = snapshot;
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -27,6 +29,7 @@ export default function Maps() {
   }, [settings]);
 
   const activeMap = maps.find(m => m.id === activeMapId);
+  const hostUrlLooksLocalOnly = /^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(\/|$)/i.test(hostUrl.trim());
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -103,7 +106,7 @@ export default function Maps() {
           </div>
         </div>
         <div className="flex-1 min-h-0">
-          <MapCanvas mapImage={activeMap.image} mapId={activeMap.id} />
+          <MapCanvas mapImage={activeMap.image} mapId={activeMap.id} characters={characterSnapshot.characters} />
         </div>
       </div>
     );
@@ -158,7 +161,7 @@ export default function Maps() {
             <input
               value={hostUrl}
               onChange={e => setHostUrl(e.target.value)}
-              placeholder="http://127.0.0.1:8787"
+              placeholder="http://192.168.1.42:8787"
               className="w-full bg-transparent font-mono text-sm text-foreground outline-none border-b border-border pb-1 placeholder:text-muted-foreground/50"
             />
           </label>
@@ -174,9 +177,19 @@ export default function Maps() {
         </div>
 
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">
-            Use Hosted mode to fetch maps from the DM host, upload map assets to the server, and stream live map updates over WebSocket.
-          </p>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Use Hosted mode to fetch maps from the DM host, upload map assets to the server, and stream live map updates over WebSocket.
+            </p>
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground/80">
+              LAN tip: start the host with <span className="font-mono">HOST=0.0.0.0</span> on the DM machine, then enter that machine&apos;s LAN IP here on every device.
+            </p>
+            {mode === 'hosted' && hostUrlLooksLocalOnly && (
+              <p className="text-[10px] uppercase tracking-widest text-amber-400">
+                LOOPBACK HOSTS ONLY WORK ON THE SAME DEVICE. USE THE DM MACHINE&apos;S LAN IP FOR TABLET/PHONE/LAPTOP PLAYERS.
+              </p>
+            )}
+          </div>
           <motion.button
             onClick={handleSaveConnection}
             className="border border-border rounded-sm px-3 py-2 text-[11px] uppercase tracking-widest font-bold hover:bg-foreground hover:text-background transition-colors"
