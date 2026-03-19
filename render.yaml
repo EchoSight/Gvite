@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: adventurista-multiplayer-host
+    runtime: docker
+    dockerfilePath: ./adventurista-toolbelt-main/Dockerfile.render
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 10000
+      - key: CAMPAIGN_ID
+        value: campaign-dev
+      - key: CAMPAIGN_NAME
+        value: Campaign Dev
+      - key: HOST_ROOT_DIR
+        value: /var/data/adventurista-host
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://echosight.github.io
+    disk:
+      name: adventurista-host-data
+      mountPath: /var/data
+      sizeGB: 5

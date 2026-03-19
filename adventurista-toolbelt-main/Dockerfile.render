@@ -1,0 +1,22 @@
+FROM node:20-bookworm-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends sqlite3 \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY adventurista-toolbelt-main/package.json adventurista-toolbelt-main/package-lock.json ./
+RUN npm ci
+
+COPY adventurista-toolbelt-main ./
+
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV PORT=10000
+ENV HOST_ROOT_DIR=/var/data/adventurista-host
+ENV CORS_ALLOWED_ORIGINS=https://echosight.github.io
+
+EXPOSE 10000
+
+CMD ["npm", "run", "host:start"]

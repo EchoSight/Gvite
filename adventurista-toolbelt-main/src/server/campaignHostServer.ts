@@ -24,6 +24,7 @@ interface HostServerOptions {
   repository: CampaignRepository;
   host?: string;
   port?: number;
+  allowedOrigins?: string[];
 }
 
 interface WebSocketClient {
@@ -31,8 +32,30 @@ interface WebSocketClient {
   socket: Socket;
 }
 
-function textResponse(res: ServerResponse, status: number, body: string, contentType = 'text/plain'): void {
-  res.writeHead(status, { 'content-type': contentType });
+function buildCorsHeaders(origin: string | undefined, allowedOrigins: string[]): Record<string, string> {
+  const hasWildcard = allowedOrigins.includes('*');
+  if (!origin) {
+    return hasWildcard ? { 'access-control-allow-origin': '*' } : {};
+  }
+
+  if (hasWildcard || allowedOrigins.includes(origin)) {
+    return {
+      'access-control-allow-origin': hasWildcard ? '*' : origin,
+      vary: 'Origin',
+    };
+  }
+
+  return {};
+}
+
+function textResponse(
+  res: ServerResponse,
+  status: number,
+  body: string,
+  contentType = 'text/plain',
+  corsHeaders: Record<string, string> = {},
+): void {
+  res.writeHead(status, { 'content-type': contentType, ...corsHeaders });
   res.end(body);
 }
 
@@ -105,8 +128,10 @@ function decodeFrame(buffer: Buffer): string | null {
 export class CampaignHostServer {
   private readonly server = createServer(this.handleRequest.bind(this));
   private readonly clients = new Set<WebSocketClient>();
+  private readonly allowedOrigins: string[];
 
   constructor(private readonly options: HostServerOptions) {
+    this.allowedOrigins = options.allowedOrigins && options.allowedOrigins.length > 0 ? options.allowedOrigins : ['*'];
     this.server.on('upgrade', this.handleUpgrade.bind(this));
   }
 
@@ -140,15 +165,27 @@ export class CampaignHostServer {
   private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const method = request.method ?? 'GET';
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? '127.0.0.1'}`);
+    const corsHeaders = buildCorsHeaders(request.headers.origin, this.allowedOrigins);
     const campaignMatch = url.pathname.match(/^\/api\/campaigns\/([^/]+)(?:\/(snapshot|events|assets))?(?:\/([^/]+))?$/);
 
+    if (method === 'OPTIONS') {
+      response.writeHead(204, {
+        ...corsHeaders,
+        'access-control-allow-methods': 'GET,POST,OPTIONS',
+        'access-control-allow-headers': 'content-type',
+        'access-control-max-age': '86400',
+      });
+      response.end();
+      return;
+    }
+
     if (url.pathname === '/health') {
-      textResponse(response, 200, JSON.stringify({ ok: true }), 'application/json');
+      textResponse(response, 200, JSON.stringify({ ok: true }), 'application/json', corsHeaders);
       return;
     }
 
     if (!campaignMatch) {
-      textResponse(response, 404, 'Not found');
+      textResponse(response, 404, 'Not found', 'text/plain', corsHeaders);
       return;
     }
 
@@ -156,13 +193,13 @@ export class CampaignHostServer {
 
     try {
       if (method === 'GET' && resource === 'snapshot') {
-        textResponse(response, 200, JSON.stringify(this.options.repository.getSnapshot(campaignId)), 'application/json');
+        textResponse(response, 200, JSON.stringify(this.options.repository.getSnapshot(campaignId)), 'application/json', corsHeaders);
         return;
       }
 
       if (method === 'GET' && resource === 'events') {
         const afterVersion = Number(url.searchParams.get('afterVersion') ?? '0');
-        textResponse(response, 200, JSON.stringify(this.options.repository.getEvents(campaignId, Number.isFinite(afterVersion) ? afterVersion : 0)), 'application/json');
+        textResponse(response, 200, JSON.stringify(this.options.repository.getEvents(campaignId, Number.isFinite(afterVersion) ? afterVersion : 0)), 'application/json', corsHeaders);
         return;
       }
 
@@ -170,7 +207,7 @@ export class CampaignHostServer {
         const body = await readJsonBody(request);
         const event = this.options.repository.appendEvent(campaignId, eventSchema.parse(body) as CampaignEventInput);
         this.broadcast(campaignId, JSON.stringify({ type: 'campaign:event', event }));
-        textResponse(response, 201, JSON.stringify(event), 'application/json');
+        textResponse(response, 201, JSON.stringify(event), 'application/json', corsHeaders);
         return;
       }
 
@@ -183,25 +220,25 @@ export class CampaignHostServer {
           mimeType: body.mimeType,
           content,
         });
-        textResponse(response, 201, JSON.stringify(asset), 'application/json');
+        textResponse(response, 201, JSON.stringify(asset), 'application/json', corsHeaders);
         return;
       }
 
       if (method === 'GET' && resource === 'assets' && resourceId) {
         const storedAsset = this.options.repository.readAssetContent(campaignId, resourceId);
         if (!storedAsset) {
-          textResponse(response, 404, 'Asset not found');
+          textResponse(response, 404, 'Asset not found', 'text/plain', corsHeaders);
           return;
         }
 
-        response.writeHead(200, { 'content-type': storedAsset.asset.mimeType });
+        response.writeHead(200, { 'content-type': storedAsset.asset.mimeType, ...corsHeaders });
         response.end(storedAsset.content);
         return;
       }
 
-      textResponse(response, 405, 'Method not allowed');
+      textResponse(response, 405, 'Method not allowed', 'text/plain', corsHeaders);
     } catch (error) {
-      textResponse(response, 400, JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), 'application/json');
+      textResponse(response, 400, JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), 'application/json', corsHeaders);
     }
   }
 

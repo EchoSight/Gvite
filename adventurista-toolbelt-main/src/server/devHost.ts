@@ -10,6 +10,14 @@ export interface DevHostConfig {
   campaignId: string;
   campaignName: string;
   rootDir: string;
+  allowedOrigins: string[];
+}
+
+
+function parseAllowedOrigins(value: string | undefined): string[] {
+  if (!value || !value.trim()) return ['*'];
+  const parsed = value.split(',').map(origin => origin.trim()).filter(Boolean);
+  return parsed.length > 0 ? parsed : ['*'];
 }
 
 function parsePort(value: string | undefined, fallback: number): number {
@@ -30,6 +38,7 @@ export function resolveDevHostConfig(env: NodeJS.ProcessEnv = process.env, cwd =
     campaignId: env.CAMPAIGN_ID?.trim() || 'campaign-dev',
     campaignName: env.CAMPAIGN_NAME?.trim() || 'Campaign Dev',
     rootDir,
+    allowedOrigins: parseAllowedOrigins(env.CORS_ALLOWED_ORIGINS),
   };
 }
 
@@ -40,6 +49,7 @@ export function formatDevHostSummary(config: DevHostConfig, address: { host: str
     `Campaign ID: ${config.campaignId}`,
     `Campaign Name: ${config.campaignName}`,
     `Data Root: ${config.rootDir}`,
+    `Allowed Origins: ${config.allowedOrigins.join(', ')}`,
     'Maps page settings:',
     `  Mode: Hosted`,
     `  Host URL: http://${address.host}:${address.port}`,
@@ -58,6 +68,7 @@ export async function startDevHost(env: NodeJS.ProcessEnv = process.env, cwd = p
     repository,
     host: config.host,
     port: config.port,
+    allowedOrigins: config.allowedOrigins,
   });
 
   const address = await server.listen();

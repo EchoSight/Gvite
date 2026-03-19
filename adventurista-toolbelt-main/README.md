@@ -20,7 +20,9 @@ npm run dev
 
 - `npm run dev` - start the Vite development server
 - `npm run host:dev` - start the DM-hosted multiplayer development server
+- `npm run host:start` - start the multiplayer host with production-style env vars
 - `npm run build` - create a production build
+- `npm run build:pages` - create a GitHub Pages-friendly static build
 - `npm run preview` - preview the production build locally
 - `npm run lint` - run ESLint
 - `npm run test` - run the Vitest suite once
@@ -77,3 +79,41 @@ Optional environment overrides:
 - `CAMPAIGN_ID`
 - `CAMPAIGN_NAME`
 - `HOST_ROOT_DIR`
+
+
+## GitHub Pages deployment
+
+This repo includes a GitHub Actions workflow that deploys the app from `adventurista-toolbelt-main/` to GitHub Pages.
+
+For a local Pages-style build, run:
+
+```sh
+npm run build:pages
+```
+
+Notes:
+
+- The app uses `HashRouter` so route navigation works on GitHub Pages without custom rewrite rules.
+- The Pages workflow installs dependencies, builds the app, and uploads `dist/` instead of the whole repository.
+
+
+## Render deployment for multiplayer sync
+
+GitHub Pages only hosts the static frontend. To sync maps across devices, deploy the multiplayer host separately.
+
+This repo now includes:
+
+- `render.yaml` to create a Render web service for the host
+- `adventurista-toolbelt-main/Dockerfile.render` so the service has the `sqlite3` CLI available
+- `CORS_ALLOWED_ORIGINS` support so the Pages frontend can call the host from another origin
+
+Recommended Render setup:
+
+1. Create a new **Blueprint** or **Web Service** from this repository.
+2. Use `adventurista-toolbelt-main/Dockerfile.render` if you create the service manually.
+3. Attach a persistent disk mounted at `/var/data`.
+4. Set `HOST_ROOT_DIR=/var/data/adventurista-host`.
+5. Set `CORS_ALLOWED_ORIGINS=https://echosight.github.io`.
+6. After deploy, copy the Render service URL into the Maps page as **Host URL** and use the same **Campaign ID** on every device.
+
+The host exposes `/health` for Render health checks and stores campaign data plus uploaded map assets under the configured host root directory.
