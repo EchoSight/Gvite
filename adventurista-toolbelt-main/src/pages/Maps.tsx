@@ -1,12 +1,13 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapCanvas } from '@/components/MapCanvas';
-import { getMaps, type MapEntry } from '@/lib/repositories';
-import { createMap, removeMap } from '@/lib/campaignMutations';
+import type { MapEntry } from '@/lib/repositories';
+import { useMapCollectionSession } from '@/hooks/useMapSessions';
 import { Plus, X, Upload, Maximize2, ArrowLeft } from 'lucide-react';
 
 export default function Maps() {
-  const [maps, setMaps] = useState<MapEntry[]>(getMaps());
+  const { snapshot, createMap, removeMap } = useMapCollectionSession();
+  const { maps } = snapshot;
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [mapName, setMapName] = useState('');
@@ -38,20 +39,17 @@ export default function Maps() {
       image: preview,
       createdAt: new Date().toISOString(),
     };
-    const updated = createMap(entry);
-    setMaps(updated);
+    createMap(entry);
     setUploading(false);
     setMapName('');
     setPreview(null);
   };
 
   const handleDelete = (id: string) => {
-    const updated = removeMap(id);
-    setMaps(updated);
+    removeMap(id);
     if (activeMapId === id) setActiveMapId(null);
   };
 
-  // Active map view (full canvas)
   if (activeMap) {
     return (
       <div className="flex-1 flex flex-col h-screen md:h-auto overflow-hidden">
@@ -86,7 +84,6 @@ export default function Maps() {
         </motion.button>
       </div>
 
-      {/* Upload form */}
       <AnimatePresence>
         {uploading && (
           <motion.div
@@ -141,7 +138,6 @@ export default function Maps() {
         )}
       </AnimatePresence>
 
-      {/* Map grid */}
       {maps.length === 0 ? (
         <div className="tactical-card text-center py-16">
           <p className="font-display text-muted-foreground text-sm tracking-widest mb-4">NO MAPS UPLOADED.</p>
