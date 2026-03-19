@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Obstacle, ObstacleLine, ObstacleRect, makeId } from '@/lib/obstacles';
 
 export type ObstacleTool = 'select' | 'line' | 'rect' | null;
@@ -28,6 +28,7 @@ export function ObstacleLayer({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [preview, setPreview] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const [isTouchDrawing, setIsTouchDrawing] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const toLocal = useCallback((e: React.PointerEvent<SVGSVGElement>): { x: number; y: number } => {
@@ -40,6 +41,67 @@ export function ObstacleLayer({
     };
   }, [zoom]);
 
+  const finalizePreview = useCallback((nextDragState: DragState, nextPreview: { x1: number; y1: number; x2: number; y2: number }) => {
+    const dx = nextPreview.x2 - nextPreview.x1;
+    const dy = nextPreview.y2 - nextPreview.y1;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist <= 5) return;
+
+    if (nextDragState.type === 'draw-line') {
+      const newObs: ObstacleLine = {
+        id: makeId(),
+        type: 'line',
+        x1: nextPreview.x1,
+        y1: nextPreview.y1,
+        x2: nextPreview.x2,
+        y2: nextPreview.y2,
+        blocksVision: true,
+        blocksMovement: false,
+      };
+      setObstacles([...obstacles, newObs]);
+      setSelectedId(newObs.id);
+      return;
+    }
+
+    const x = Math.min(nextPreview.x1, nextPreview.x2);
+    const y = Math.min(nextPreview.y1, nextPreview.y2);
+    const w = Math.abs(dx);
+    const h = Math.abs(dy);
+    const newObs: ObstacleRect = {
+      id: makeId(),
+      type: 'rect',
+      x,
+      y,
+      w,
+      h,
+      blocksVision: true,
+      blocksMovement: false,
+    };
+    setObstacles([...obstacles, newObs]);
+    setSelectedId(newObs.id);
+  }, [obstacles, setObstacles]);
+
+  useEffect(() => {
+    if (
+      (tool === 'line' && dragState?.type === 'draw-line') ||
+      (tool === 'rect' && dragState?.type === 'draw-rect')
+    ) {
+      return;
+    }
+
+    if (tool === 'line' || tool === 'rect') {
+      setDragState(null);
+      setPreview(null);
+      setIsTouchDrawing(false);
+      return;
+    }
+
+    setDragState(null);
+    setPreview(null);
+    setIsTouchDrawing(false);
+  }, [dragState?.type, tool]);
+
   const handlePointerDown = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
     if (!isDM || showForPlayer) return;
     e.stopPropagation();
@@ -47,10 +109,34 @@ export function ObstacleLayer({
     const p = toLocal(e);
 
     if (tool === 'line' || tool === 'rect') {
-      setDragState({ type: tool === 'line' ? 'draw-line' : 'draw-rect', startX: p.x, startY: p.y });
+      const nextDragState: DragState = {
+        type: tool === 'line' ? 'draw-line' : 'draw-rect',
+        startX: p.x,
+        startY: p.y,
+      };
+      const isTouchPointer = e.pointerType === 'touch';
+
+      if (isTouchPointer && dragState?.type === nextDragState.type && preview) {
+        const nextPreview = {
+          x1: preview.x1,
+          y1: preview.y1,
+          x2: p.x,
+          y2: p.y,
+        };
+        finalizePreview(dragState, nextPreview);
+        setDragState(null);
+        setPreview(null);
+        setIsTouchDrawing(false);
+        svgRef.current?.releasePointerCapture?.(e.pointerId);
+        return;
+      }
+
+      setDragState(nextDragState);
       setPreview({ x1: p.x, y1: p.y, x2: p.x, y2: p.y });
+      setIsTouchDrawing(isTouchPointer);
       setSelectedId(null);
     } else if (tool === 'select') {
+      setIsTouchDrawing(false);
       // Check if clicking on an obstacle
       const hit = hitTest(p.x, p.y, obstacles);
       if (hit) {
@@ -65,7 +151,7 @@ export function ObstacleLayer({
         setSelectedId(null);
       }
     }
-  }, [isDM, showForPlayer, tool, obstacles, toLocal]);
+  }, [dragState, finalizePreview, isDM, obstacles, preview, showForPlayer, toLocal, tool]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
     if (!dragState) return;
@@ -122,35 +208,21 @@ export function ObstacleLayer({
     svgRef.current?.releasePointerCapture?.(e.pointerId);
 
     if ((dragState.type === 'draw-line' || dragState.type === 'draw-rect') && preview) {
-      const dx = preview.x2 - preview.x1;
-      const dy = preview.y2 - preview.y1;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > 5) {
-        if (dragState.type === 'draw-line') {
-          const newObs: ObstacleLine = {
-            id: makeId(), type: 'line',
-            x1: preview.x1, y1: preview.y1, x2: preview.x2, y2: preview.y2,
-            blocksVision: true, blocksMovement: false,
-          };
-          setObstacles([...obstacles, newObs]);
-          setSelectedId(newObs.id);
-        } else {
-          const x = Math.min(preview.x1, preview.x2);
-          const y = Math.min(preview.y1, preview.y2);
-          const w = Math.abs(dx);
-          const h = Math.abs(dy);
-          const newObs: ObstacleRect = {
-            id: makeId(), type: 'rect', x, y, w, h,
-            blocksVision: true, blocksMovement: false,
-          };
-          setObstacles([...obstacles, newObs]);
-          setSelectedId(newObs.id);
-        }
-      }
+      if (e.pointerType === 'touch') return;
+      finalizePreview(dragState, preview);
     }
+    setIsTouchDrawing(false);
     setDragState(null);
     setPreview(null);
-  }, [dragState, preview, obstacles, setObstacles]);
+  }, [dragState, finalizePreview, preview]);
+
+  const handlePointerCancel = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
+    e.stopPropagation();
+    svgRef.current?.releasePointerCapture?.(e.pointerId);
+    setIsTouchDrawing(false);
+    setDragState(null);
+    setPreview(null);
+  }, []);
 
   const deleteSelected = useCallback(() => {
     if (!selectedId) return;
@@ -196,7 +268,7 @@ export function ObstacleLayer({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
       >
         {/* Render obstacles */}
         {obstacles.map(obs => {
@@ -295,6 +367,17 @@ export function ObstacleLayer({
           )
         )}
       </svg>
+
+      {isTouchDrawing && preview && dragState && dragState.type !== 'move' && dragState.type !== 'resize' && (
+        <div
+          className="absolute bottom-2 left-2 bg-card/90 border border-border rounded px-2 py-1 z-50"
+          style={{ pointerEvents: 'none' }}
+        >
+          <p className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold">
+            Touch: tap once to place, tap again to finish
+          </p>
+        </div>
+      )}
 
       {/* Selected obstacle properties panel */}
       {selected && isDM && !showForPlayer && (
