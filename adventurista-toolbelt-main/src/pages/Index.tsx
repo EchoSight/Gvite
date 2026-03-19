@@ -1,24 +1,19 @@
-import { useState, useEffect } from 'react';
-import { getCharacters } from '@/lib/store';
-import { Character } from '@/lib/types';
+import { useCharacterCollectionSession } from '@/hooks/useCharacterSessions';
 import { CharacterCard } from '@/components/CharacterCard';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Plus } from 'lucide-react';
 
 export default function CharacterList() {
-  const [characters, setCharacters] = useState<Character[]>([]);
-
-  useEffect(() => {
-    setCharacters(getCharacters());
-  }, []);
+  const { snapshot, status } = useCharacterCollectionSession();
+  const { characters } = snapshot;
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="font-display text-lg text-foreground">CHARACTER ROSTER</h1>
-          <p className="text-[11px] text-muted-foreground uppercase tracking-widest">{characters.length} BUILD{characters.length !== 1 ? 'S' : ''} REGISTERED</p>
+          <p className="text-[11px] text-muted-foreground uppercase tracking-widest">{characters.length} BUILD{characters.length !== 1 ? 'S' : ''} REGISTERED · {status.mode === 'hosted' ? `HOSTED ${status.state}` : 'LOCAL'}</p>
         </div>
         <Link to="/create">
           <motion.div

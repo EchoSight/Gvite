@@ -4,7 +4,6 @@ import {
   ZoomIn, ZoomOut, RotateCcw, Plus, Trash2, X,
   Grid3X3, Eye, EyeOff, Minus, MousePointer, Move, Slash, Square,
 } from 'lucide-react';
-import { getCharacters } from '@/lib/store';
 import { Character, MapToken } from '@/lib/types';
 import { useGame } from '@/lib/GameContext';
 import { InitiativeTracker, InitiativeEntry } from './InitiativeTracker';
@@ -21,6 +20,7 @@ import { useMapSession } from '@/hooks/useMapSessions';
 interface MapCanvasProps {
   mapImage: string;
   mapId: string;
+  characters: Character[];
 }
 
 const MONSTER_PRESETS = [
@@ -40,7 +40,7 @@ const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 5;
 const ZOOM_STEP = 0.2;
 
-export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
+export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
   const { isDM } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -79,7 +79,11 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
   const [currentTurnIndex, setCurrentTurnIndex] = useState(0);
   const [combatMoving, setCombatMoving] = useState(false);
 
-  const characters = useRef<Character[]>(getCharacters());
+  const charactersRef = useRef<Character[]>(characters);
+
+  useEffect(() => {
+    charactersRef.current = characters;
+  }, [characters]);
 
   const currentTurnId = combatActive && initiativeEntries.length > 0
     ? initiativeEntries[currentTurnIndex]?.tokenId
@@ -288,7 +292,7 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
     const cellsMoved = Math.max(dx, dy);
     const ftMoved = Math.round(cellsMoved) * ftPerCell;
 
-    const charData = characters.current.find(c => c.name === activeToken.label);
+    const charData = charactersRef.current.find(c => c.name === activeToken.label);
     const maxMovement = charData?.speed || 30;
     const remaining = maxMovement - combatMovementUsed;
 
@@ -558,10 +562,10 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
               {showAddMenu && (
                 <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border rounded-sm shadow-xl z-50 max-h-64 overflow-y-auto">
                   <p className="text-[9px] uppercase tracking-wider text-muted-foreground px-3 py-2 border-b border-border">Characters</p>
-                  {characters.current.length === 0 ? (
+                  {charactersRef.current.length === 0 ? (
                     <p className="text-[10px] text-muted-foreground px-3 py-2">No characters</p>
                   ) : (
-                    characters.current.map(c => (
+                    charactersRef.current.map(c => (
                       <button
                         key={c.id}
                         onClick={() => addCharacterToken(c)}
@@ -794,6 +798,7 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
           onResetCombat={handleResetCombat}
           combatActive={combatActive}
           isDM={isDM}
+          characters={characters}
         />
 
         {combatActive && currentTurnToken && canManageCurrentTurn && (
@@ -813,6 +818,7 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
             onSetMovementUsed={setCombatMovementUsed}
             onSetCombatMoving={setCombatMoving}
             combatMoving={combatMoving}
+            characters={characters}
           />
         )}
 

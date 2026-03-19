@@ -3,12 +3,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MapCanvas } from '@/components/MapCanvas';
 import type { MapEntry } from '@/lib/repositories';
 import { useMapCollectionSession } from '@/hooks/useMapSessions';
-import { useMultiplayerSettings } from '@/hooks/useMultiplayerSettings';
+import { useMultiplayerSession } from '@/lib/MultiplayerSessionContext';
+import { useCharacterCollectionSession } from '@/hooks/useCharacterSessions';
 import { Plus, X, Upload, Maximize2, ArrowLeft, Plug, Server } from 'lucide-react';
 
 export default function Maps() {
   const { snapshot, createMap, removeMap, status } = useMapCollectionSession();
-  const { settings, saveSettings } = useMultiplayerSettings();
+  const { settings, saveSettings } = useMultiplayerSession();
+  const { snapshot: characterSnapshot } = useCharacterCollectionSession();
   const { maps } = snapshot;
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -103,7 +105,7 @@ export default function Maps() {
           </div>
         </div>
         <div className="flex-1 min-h-0">
-          <MapCanvas mapImage={activeMap.image} mapId={activeMap.id} />
+          <MapCanvas mapImage={activeMap.image} mapId={activeMap.id} characters={characterSnapshot.characters} />
         </div>
       </div>
     );

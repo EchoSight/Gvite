@@ -11,8 +11,7 @@ import {
   type MapIntent,
 } from '@/lib/mapSessions';
 import { NetworkCampaignClient } from '@/lib/networkCampaignSync';
-import { isHostedMultiplayerEnabled } from '@/lib/multiplayerSettings';
-import { useMultiplayerSettings } from './useMultiplayerSettings';
+import { useMultiplayerSession } from '@/lib/MultiplayerSessionContext';
 
 interface SessionStatus {
   mode: 'local' | 'hosted';
@@ -22,14 +21,6 @@ interface SessionStatus {
 
 function emptyCollectionSnapshot(): MapCollectionSnapshot {
   return { maps: [], version: 0 };
-}
-
-function createHostedClient(hostUrl: string, campaignId: string) {
-  return new NetworkCampaignClient({
-    baseUrl: hostUrl,
-    campaignId,
-    webSocketFactory: url => new WebSocket(url),
-  });
 }
 
 function parseDataUrl(dataUrl: string): { mimeType: string; bytes: Uint8Array } | null {
@@ -65,12 +56,7 @@ async function hydrateHostedMap(client: NetworkCampaignClient, map: MapEntry): P
 
 export function useMapCollectionSession() {
   const localSession = useMemo(() => new MapCollectionSession(), []);
-  const { settings } = useMultiplayerSettings();
-  const hosted = isHostedMultiplayerEnabled(settings);
-  const hostedClient = useMemo(
-    () => hosted ? createHostedClient(settings.hostUrl, settings.campaignId) : null,
-    [hosted, settings.hostUrl, settings.campaignId],
-  );
+  const { hosted, hostedClient } = useMultiplayerSession();
 
   const [snapshot, setSnapshot] = useState<MapCollectionSnapshot>(() => localSession.getSnapshot());
   const [status, setStatus] = useState<SessionStatus>({ mode: hosted ? 'hosted' : 'local', state: 'idle', error: null });
@@ -98,7 +84,6 @@ export function useMapCollectionSession() {
     };
 
     void refresh();
-    hostedClient.connect();
     const unsubscribe = hostedClient.subscribe(event => {
       if (event.type === 'map:created' || event.type === 'map:deleted') {
         void refresh();
@@ -108,7 +93,6 @@ export function useMapCollectionSession() {
     return () => {
       active = false;
       unsubscribe();
-      hostedClient.disconnect();
     };
   }, [hosted, hostedClient, localSession]);
 
@@ -144,12 +128,7 @@ export function useMapSession(mapId: string, fallbackGridSettings: GridSettings)
     () => new MapSession(mapId, fallbackGridSettings),
     [mapId, fallbackGridSettings],
   );
-  const { settings } = useMultiplayerSettings();
-  const hosted = isHostedMultiplayerEnabled(settings);
-  const hostedClient = useMemo(
-    () => hosted ? createHostedClient(settings.hostUrl, settings.campaignId) : null,
-    [hosted, settings.hostUrl, settings.campaignId],
-  );
+  const { hosted, hostedClient } = useMultiplayerSession();
 
   const [snapshot, setSnapshot] = useState<MapSnapshot>(() => localSession.getSnapshot());
   const [status, setStatus] = useState<SessionStatus>({ mode: hosted ? 'hosted' : 'local', state: 'idle', error: null });
@@ -177,7 +156,6 @@ export function useMapSession(mapId: string, fallbackGridSettings: GridSettings)
     };
 
     void refresh();
-    hostedClient.connect();
     const unsubscribe = hostedClient.subscribe(event => {
       if (event.type === 'map:created' || ('mapId' in event.payload && event.payload.mapId === mapId)) {
         void refresh();
@@ -187,7 +165,6 @@ export function useMapSession(mapId: string, fallbackGridSettings: GridSettings)
     return () => {
       active = false;
       unsubscribe();
-      hostedClient.disconnect();
     };
   }, [fallbackGridSettings, hosted, hostedClient, localSession, mapId]);
 
