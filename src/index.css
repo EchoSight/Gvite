@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 6%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 6%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 10% 3.9%;
+    --secondary: 217 91% 60%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 5% 15%;
+    --muted-foreground: 240 5% 45%;
+    --accent: 0 72% 51%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5% 15%;
+    --input: 240 5% 15%;
+    --ring: 217 91% 60%;
+    --radius: 2px;
+
+    --sidebar-background: 240 10% 5%;
+    --sidebar-foreground: 0 0% 85%;
+    --sidebar-primary: 0 0% 98%;
+    --sidebar-primary-foreground: 240 10% 3.9%;
+    --sidebar-accent: 240 5% 12%;
+    --sidebar-accent-foreground: 0 0% 90%;
+    --sidebar-border: 240 5% 15%;
+    --sidebar-ring: 217 91% 60%;
+
+    --tactical-red: 0 72% 51%;
+    --mana-blue: 217 91% 60%;
+    --xp-gold: 45 93% 47%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Geist Mono', monospace;
+    letter-spacing: -0.04em;
+  }
+  .font-body {
+    font-family: 'Inter', sans-serif;
+    line-height: 1.6;
+  }
+  .stat-value {
+    font-family: 'Geist Mono', monospace;
+    @apply text-3xl tracking-tighter antialiased;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-label {
+    font-family: 'Inter', sans-serif;
+    @apply text-[10px] uppercase tracking-widest font-bold;
+    color: hsl(var(--muted-foreground));
+  }
+  .tactical-card {
+    @apply bg-card border border-border rounded-sm p-4 transition-colors duration-150;
+  }
+  .tactical-card:hover {
+    border-color: hsl(240 5% 25%);
+  }
+  .tactical-header {
+    font-family: 'Geist Mono', monospace;
+    @apply text-[11px] uppercase tracking-widest font-bold text-muted-foreground;
+  }
+}
