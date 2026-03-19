@@ -2,14 +2,15 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { formatDevHostSummary, resolveDevHostConfig, startDevHost } from '@/server/devHost';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { formatDevHostSummary, getReachableHostUrls, resolveDevHostConfig, startDevHost } from '@/server/devHost';
 
 describe('devHost bootstrap', () => {
   const closers: Array<() => Promise<void>> = [];
 
   afterEach(async () => {
     await Promise.all(closers.splice(0).map(close => close()));
+    vi.restoreAllMocks();
   });
 
   it('resolves defaults for local development', () => {
@@ -42,6 +43,52 @@ describe('devHost bootstrap', () => {
     });
   });
 
+  it('includes LAN-ready URLs when the host binds to all interfaces', () => {
+    const lanInterfaces = {
+      en0: [
+        {
+          address: '192.168.1.42',
+          family: 'IPv4',
+          internal: false,
+          netmask: '255.255.255.0',
+          mac: '00:00:00:00:00:00',
+          cidr: '192.168.1.42/24',
+        },
+      ],
+      lo: [
+        {
+          address: '127.0.0.1',
+          family: 'IPv4',
+          internal: true,
+          netmask: '255.0.0.0',
+          mac: '00:00:00:00:00:00',
+          cidr: '127.0.0.1/8',
+        },
+      ],
+    } satisfies ReturnType<typeof import('node:os').networkInterfaces>;
+
+    const reachable = getReachableHostUrls('0.0.0.0', 8787, lanInterfaces);
+    expect(reachable).toEqual({
+      primaryUrl: 'http://192.168.1.42:8787',
+      lanUrls: ['http://192.168.1.42:8787'],
+    });
+
+    const summary = formatDevHostSummary({
+      host: '0.0.0.0',
+      port: 8787,
+      campaignId: 'camp-dev',
+      campaignName: 'Camp Dev',
+      rootDir: '/tmp/camp',
+      allowedOrigins: ['*'],
+    }, { host: '0.0.0.0', port: 8787 }, lanInterfaces);
+
+    expect(summary).toContain('Bind Address: http://0.0.0.0:8787');
+    expect(summary).toContain('Host URL: http://192.168.1.42:8787');
+    expect(summary).toContain('LAN URLs:');
+    expect(summary).toContain('  - http://192.168.1.42:8787');
+    expect(summary).toContain('LAN tip: share one of the LAN URLs above with other devices on the same network.');
+  });
+
   it('starts the host and formats a copyable summary', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'adventurista-dev-host-'));
     const started = await startDevHost({
@@ -57,6 +104,7 @@ describe('devHost bootstrap', () => {
     expect(started.address.port).toBeGreaterThan(0);
 
     const summary = formatDevHostSummary(started.config, started.address);
+    expect(summary).toContain(`Bind Address: http://127.0.0.1:${started.address.port}`);
     expect(summary).toContain(`Host URL: http://127.0.0.1:${started.address.port}`);
     expect(summary).toContain('Campaign ID: camp-dev');
     expect(summary).toContain('Allowed Origins: *');

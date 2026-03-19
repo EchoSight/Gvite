@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SqliteCampaignRepository } from './sqliteCampaignRepository';
@@ -12,7 +13,6 @@ export interface DevHostConfig {
   rootDir: string;
   allowedOrigins: string[];
 }
-
 
 function parseAllowedOrigins(value: string | undefined): string[] {
   if (!value || !value.trim()) return ['*'];
@@ -29,6 +29,38 @@ function parsePort(value: string | undefined, fallback: number): number {
   return parsed;
 }
 
+function isWildcardHost(host: string): boolean {
+  return host === '0.0.0.0' || host === '::';
+}
+
+function getLanUrls(port: number, interfaces = networkInterfaces()): string[] {
+  const urls = new Set<string>();
+
+  Object.values(interfaces).forEach(addresses => {
+    addresses?.forEach(address => {
+      if (address.internal || address.family !== 'IPv4') return;
+      urls.add(`http://${address.address}:${port}`);
+    });
+  });
+
+  return [...urls].sort();
+}
+
+export function getReachableHostUrls(host: string, port: number, interfaces = networkInterfaces()): { primaryUrl: string; lanUrls: string[] } {
+  if (isWildcardHost(host)) {
+    const lanUrls = getLanUrls(port, interfaces);
+    return {
+      primaryUrl: lanUrls[0] ?? `http://127.0.0.1:${port}`,
+      lanUrls,
+    };
+  }
+
+  return {
+    primaryUrl: `http://${host}:${port}`,
+    lanUrls: [],
+  };
+}
+
 export function resolveDevHostConfig(env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): DevHostConfig {
   const rootDir = resolve(cwd, env.HOST_ROOT_DIR?.trim() || '.adventurista-host');
 
@@ -42,19 +74,35 @@ export function resolveDevHostConfig(env: NodeJS.ProcessEnv = process.env, cwd =
   };
 }
 
-export function formatDevHostSummary(config: DevHostConfig, address: { host: string; port: number }): string {
-  return [
+export function formatDevHostSummary(config: DevHostConfig, address: { host: string; port: number }, interfaces = networkInterfaces()): string {
+  const { primaryUrl, lanUrls } = getReachableHostUrls(config.host, address.port, interfaces);
+  const lines = [
     'Adventurista multiplayer host is running.',
-    `Host URL: http://${address.host}:${address.port}`,
+    `Bind Address: http://${address.host}:${address.port}`,
+    `Host URL: ${primaryUrl}`,
     `Campaign ID: ${config.campaignId}`,
     `Campaign Name: ${config.campaignName}`,
     `Data Root: ${config.rootDir}`,
     `Allowed Origins: ${config.allowedOrigins.join(', ')}`,
+  ];
+
+  if (lanUrls.length > 0) {
+    lines.push('LAN URLs:');
+    lanUrls.forEach(url => lines.push(`  - ${url}`));
+  }
+
+  lines.push(
     'Maps page settings:',
-    `  Mode: Hosted`,
-    `  Host URL: http://${address.host}:${address.port}`,
+    '  Mode: Hosted',
+    `  Host URL: ${primaryUrl}`,
     `  Campaign ID: ${config.campaignId}`,
-  ].join('\n');
+  );
+
+  if (lanUrls.length > 0) {
+    lines.push('LAN tip: share one of the LAN URLs above with other devices on the same network.');
+  }
+
+  return lines.join('\n');
 }
 
 export async function startDevHost(env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()) {

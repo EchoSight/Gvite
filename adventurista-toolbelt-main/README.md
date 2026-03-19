@@ -20,6 +20,7 @@ npm run dev
 
 - `npm run dev` - start the Vite development server
 - `npm run host:dev` - start the DM-hosted multiplayer development server
+- `HOST=0.0.0.0 npm run host:dev` - bind the host for LAN play and print shareable LAN URLs
 - `npm run host:start` - start the multiplayer host with production-style env vars
 - `npm run build` - create a production build
 - `npm run build:pages` - create a GitHub Pages-friendly static build
@@ -79,6 +80,27 @@ Optional environment overrides:
 - `CAMPAIGN_ID`
 - `CAMPAIGN_NAME`
 - `HOST_ROOT_DIR`
+
+### LAN play
+
+To let other devices on the same network join the host:
+
+```sh
+HOST=0.0.0.0 npm run host:dev
+```
+
+Then:
+
+1. Copy one of the printed `LAN URLs` from the host terminal.
+2. Open the app on each player device.
+3. In **Maps → Multiplayer Host Connection**, set **Mode** to `Hosted`.
+4. Paste the LAN URL into **Host URL** and use the same **Campaign ID** on every device.
+
+Notes:
+
+- `127.0.0.1` / `localhost` only work on the same machine that is running the host.
+- For phone/tablet/laptop players, use the DM machine's LAN IP such as `http://192.168.1.42:8787`.
+- If you later want internet play, use a remote-safe setup such as Render, Tailscale, or port forwarding.
 
 
 ## GitHub Pages deployment

@@ -37,6 +37,17 @@ Defaults:
 
 For local development, keeping host data under the repo-local `.adventurista-host/` directory makes the SQLite database and uploaded assets easy to inspect. For the future desktop build, this root should move to the platform app-data directory instead of the project folder.
 
+
+## LAN usage
+
+If you want other devices on the same network to connect directly to the DM host, start it with:
+
+```sh
+HOST=0.0.0.0 npm run host:dev
+```
+
+When the host binds to `0.0.0.0`, the startup summary prints one or more `LAN URLs`. Share one of those URLs with players and use it as the **Host URL** inside the Maps page. Do not use `127.0.0.1` or `localhost` on other devices; those loop back to the player device itself.
+
 Supported environment variables:
 
 - `HOST`
