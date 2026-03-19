@@ -9,17 +9,12 @@ import { Character, MapToken } from '@/lib/types';
 import { useGame } from '@/lib/GameContext';
 import { InitiativeTracker, InitiativeEntry } from './InitiativeTracker';
 import { CombatPanel } from './CombatPanel';
-import { Obstacle, loadObstacles, saveObstacles } from '@/lib/obstacles';
+import { Obstacle, loadObstacles } from '@/lib/obstacles';
 import { ObstacleLayer, ObstacleTool } from './ObstacleLayer';
 import { FogOfWarLayer } from './FogOfWarLayer';
 import { isVisible, isMovementBlocked } from '@/lib/visibility';
-import {
-  loadGridSettings as loadStoredGridSettings,
-  loadMapTokens,
-  saveGridSettings as saveStoredGridSettings,
-  saveMapTokens,
-  type GridSettings,
-} from '@/lib/repositories';
+import { loadGridSettings as loadStoredGridSettings, loadMapTokens, type GridSettings } from '@/lib/repositories';
+import { replaceMapObstacles, replaceMapTokens, saveMapGridSettings } from '@/lib/campaignMutations';
 
 
 interface MapCanvasProps {
@@ -85,17 +80,36 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
     ? initiativeEntries[currentTurnIndex]?.tokenId
     : null;
 
+  const hasPersistedTokens = useRef(false);
+  const hasPersistedObstacles = useRef(false);
+  const hasPersistedGridSettings = useRef(false);
+
   // Persist tokens & obstacles
   useEffect(() => {
-    saveMapTokens(mapId, tokens);
+    if (!hasPersistedTokens.current) {
+      hasPersistedTokens.current = true;
+      return;
+    }
+
+    replaceMapTokens(mapId, tokens);
   }, [tokens, mapId]);
 
   useEffect(() => {
-    saveObstacles(mapId, obstacles);
+    if (!hasPersistedObstacles.current) {
+      hasPersistedObstacles.current = true;
+      return;
+    }
+
+    replaceMapObstacles(mapId, obstacles);
   }, [obstacles, mapId]);
 
   useEffect(() => {
-    saveStoredGridSettings(mapId, {
+    if (!hasPersistedGridSettings.current) {
+      hasPersistedGridSettings.current = true;
+      return;
+    }
+
+    saveMapGridSettings(mapId, {
       ...gridSettings,
       offsetX: gridOffset.x,
       offsetY: gridOffset.y,

@@ -1,7 +1,8 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapCanvas } from '@/components/MapCanvas';
-import { deleteMap, getMaps, saveMaps, type MapEntry } from '@/lib/repositories';
+import { getMaps, type MapEntry } from '@/lib/repositories';
+import { createMap, removeMap } from '@/lib/campaignMutations';
 import { Plus, X, Upload, Maximize2, ArrowLeft } from 'lucide-react';
 
 export default function Maps() {
@@ -37,8 +38,7 @@ export default function Maps() {
       image: preview,
       createdAt: new Date().toISOString(),
     };
-    const updated = [...maps, entry];
-    saveMaps(updated);
+    const updated = createMap(entry);
     setMaps(updated);
     setUploading(false);
     setMapName('');
@@ -46,7 +46,7 @@ export default function Maps() {
   };
 
   const handleDelete = (id: string) => {
-    const updated = deleteMap(id);
+    const updated = removeMap(id);
     setMaps(updated);
     if (activeMapId === id) setActiveMapId(null);
   };

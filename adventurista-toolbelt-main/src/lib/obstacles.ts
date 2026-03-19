@@ -1,4 +1,5 @@
-import { loadObstacles as loadStoredObstacles, saveObstacles as saveStoredObstacles } from './repositories';
+import { replaceMapObstacles } from './campaignMutations';
+import { loadObstacles as loadStoredObstacles } from './repositories';
 
 // Obstacle types and persistence for map tools
 
@@ -31,7 +32,7 @@ export function loadObstacles(mapId: string): Obstacle[] {
 }
 
 export function saveObstacles(mapId: string, obstacles: Obstacle[]) {
-  saveStoredObstacles(mapId, obstacles);
+  replaceMapObstacles(mapId, obstacles);
 }
 
 export function makeId(): string {

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, ReactNode } from 'react';
 import type { GameRole } from './gameRole';
-import { getGameRole, setGameRole } from './repositories';
+import { getGameRole } from './repositories';
+import { setRole as persistRole } from './campaignMutations';
 
 interface GameContextValue {
   role: GameRole;
@@ -19,7 +20,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const handleSetRole = (r: GameRole) => {
     setRole(r);
-    setGameRole(r);
+    persistRole(r);
   };
 
   return (
