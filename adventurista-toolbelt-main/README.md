@@ -19,6 +19,7 @@ npm run dev
 ## Available scripts
 
 - `npm run dev` - start the Vite development server
+- `npm run host:dev` - start the DM-hosted multiplayer development server
 - `npm run build` - create a production build
 - `npm run preview` - preview the production build locally
 - `npm run lint` - run ESLint
@@ -54,3 +55,25 @@ Run the node-focused checks with:
 ```sh
 npm run test:node
 ```
+
+## Running the development multiplayer host
+
+Start the DM host in a separate terminal:
+
+```sh
+npm run host:dev
+```
+
+By default, the host:
+
+- listens on `http://127.0.0.1:8787`
+- uses campaign id `campaign-dev`
+- stores SQLite data and uploaded assets under `.adventurista-host/`
+
+Optional environment overrides:
+
+- `HOST`
+- `PORT`
+- `CAMPAIGN_ID`
+- `CAMPAIGN_NAME`
+- `HOST_ROOT_DIR`

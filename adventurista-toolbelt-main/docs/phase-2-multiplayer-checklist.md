@@ -16,9 +16,9 @@ Ship a development-ready hosted map workflow where:
 
 ### Host runtime
 
-- [ ] Add a development host bootstrap command that constructs `SqliteCampaignRepository` + `CampaignHostServer`.
-- [ ] Decide the host data root directory for local development and for the future desktop build.
-- [ ] Expose the active host address/port in the UI or logs.
+- [x] Add a development host bootstrap command that constructs `SqliteCampaignRepository` + `CampaignHostServer`.
+- [x] Decide the host data root directory for local development and for the future desktop build.
+- [x] Expose the active host address/port in the UI or logs.
 
 ### Frontend wiring
 

@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "host:dev": "vite-node --config vite.config.ts --script src/server/devHost.ts",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:node": "vitest run src/test/sqliteCampaignRepository.test.ts src/test/campaignHostServer.test.ts"
+    "test:node": "vitest run src/test/sqliteCampaignRepository.test.ts src/test/campaignHostServer.test.ts src/test/devHostBootstrap.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
