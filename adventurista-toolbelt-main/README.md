@@ -34,3 +34,6 @@ npm run dev
 - shadcn/ui
 - Vitest
 - Playwright
+## Planning docs
+
+- [Desktop multiplayer architecture plan](docs/desktop-multiplayer-architecture.md)

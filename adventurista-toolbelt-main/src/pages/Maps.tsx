@@ -1,25 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapCanvas } from '@/components/MapCanvas';
+import { getMaps, type MapEntry } from '@/lib/repositories';
+import { createMap, removeMap } from '@/lib/campaignMutations';
 import { Plus, X, Upload, Maximize2, ArrowLeft } from 'lucide-react';
-
-interface MapEntry {
-  id: string;
-  name: string;
-  image: string; // base64
-  createdAt: string;
-}
-
-const MAPS_KEY = 'dnd_maps';
-
-function getMaps(): MapEntry[] {
-  const data = localStorage.getItem(MAPS_KEY);
-  return data ? JSON.parse(data) : [];
-}
-
-function saveMaps(maps: MapEntry[]) {
-  localStorage.setItem(MAPS_KEY, JSON.stringify(maps));
-}
 
 export default function Maps() {
   const [maps, setMaps] = useState<MapEntry[]>(getMaps());
@@ -54,8 +38,7 @@ export default function Maps() {
       image: preview,
       createdAt: new Date().toISOString(),
     };
-    const updated = [...maps, entry];
-    saveMaps(updated);
+    const updated = createMap(entry);
     setMaps(updated);
     setUploading(false);
     setMapName('');
@@ -63,10 +46,8 @@ export default function Maps() {
   };
 
   const handleDelete = (id: string) => {
-    const updated = maps.filter(m => m.id !== id);
-    saveMaps(updated);
+    const updated = removeMap(id);
     setMaps(updated);
-    localStorage.removeItem(`map-tokens-${id}`);
     if (activeMapId === id) setActiveMapId(null);
   };
 

@@ -5,39 +5,21 @@ import {
   Grid3X3, Eye, EyeOff, Minus, MousePointer, Move, Slash, Square,
 } from 'lucide-react';
 import { getCharacters } from '@/lib/store';
-import { Character } from '@/lib/types';
+import { Character, MapToken } from '@/lib/types';
 import { useGame } from '@/lib/GameContext';
 import { InitiativeTracker, InitiativeEntry } from './InitiativeTracker';
 import { CombatPanel } from './CombatPanel';
-import { Obstacle, loadObstacles, saveObstacles } from '@/lib/obstacles';
+import { Obstacle, loadObstacles } from '@/lib/obstacles';
 import { ObstacleLayer, ObstacleTool } from './ObstacleLayer';
 import { FogOfWarLayer } from './FogOfWarLayer';
 import { isVisible, isMovementBlocked } from '@/lib/visibility';
+import { loadGridSettings as loadStoredGridSettings, loadMapTokens, type GridSettings } from '@/lib/repositories';
+import { replaceMapObstacles, replaceMapTokens, saveMapGridSettings } from '@/lib/campaignMutations';
 
-export interface MapToken {
-  id: string;
-  label: string;
-  x: number;
-  y: number;
-  color: string;
-  icon?: string;
-  type: 'character' | 'monster';
-  hp?: number;
-  maxHp?: number;
-  visionRadius?: number; // in pixels
-}
 
 interface MapCanvasProps {
   mapImage: string;
   mapId: string;
-}
-
-interface GridSettings {
-  showGrid: boolean;
-  gridSize: number;
-  ftPerCell: number;
-  offsetX: number;
-  offsetY: number;
 }
 
 const MONSTER_PRESETS = [
@@ -54,46 +36,11 @@ const DEFAULT_FT_PER_CELL = 5;
 const DEFAULT_VISION_CELLS = 12; // 12 cells = 60ft default vision
 const DEFAULT_GRID_OFFSET = { x: 0, y: 0 };
 
-const loadGridSettings = (mapId: string): GridSettings => {
-  const saved = localStorage.getItem(`map-grid-settings-${mapId}`);
-  if (!saved) {
-    return {
-      showGrid: true,
-      gridSize: DEFAULT_GRID_SIZE,
-      ftPerCell: DEFAULT_FT_PER_CELL,
-      offsetX: DEFAULT_GRID_OFFSET.x,
-      offsetY: DEFAULT_GRID_OFFSET.y,
-    };
-  }
-
-  try {
-    const parsed = JSON.parse(saved) as Partial<GridSettings>;
-    return {
-      showGrid: parsed.showGrid ?? true,
-      gridSize: parsed.gridSize ?? DEFAULT_GRID_SIZE,
-      ftPerCell: parsed.ftPerCell ?? DEFAULT_FT_PER_CELL,
-      offsetX: parsed.offsetX ?? DEFAULT_GRID_OFFSET.x,
-      offsetY: parsed.offsetY ?? DEFAULT_GRID_OFFSET.y,
-    };
-  } catch {
-    return {
-      showGrid: true,
-      gridSize: DEFAULT_GRID_SIZE,
-      ftPerCell: DEFAULT_FT_PER_CELL,
-      offsetX: DEFAULT_GRID_OFFSET.x,
-      offsetY: DEFAULT_GRID_OFFSET.y,
-    };
-  }
-};
-
 export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
   const { isDM } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
-  const [tokens, setTokens] = useState<MapToken[]>(() => {
-    const saved = localStorage.getItem(`map-tokens-${mapId}`);
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [tokens, setTokens] = useState<MapToken[]>(() => loadMapTokens(mapId));
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
@@ -101,7 +48,13 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
   const [draggingToken, setDraggingToken] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [showAddMenu, setShowAddMenu] = useState(false);
-  const [gridSettings, setGridSettings] = useState<GridSettings>(() => loadGridSettings(mapId));
+  const [gridSettings, setGridSettings] = useState<GridSettings>(() => loadStoredGridSettings(mapId, {
+    showGrid: true,
+    gridSize: DEFAULT_GRID_SIZE,
+    ftPerCell: DEFAULT_FT_PER_CELL,
+    offsetX: DEFAULT_GRID_OFFSET.x,
+    offsetY: DEFAULT_GRID_OFFSET.y,
+  }));
   const { showGrid, gridSize, ftPerCell } = gridSettings;
   const [gridOffset, setGridOffset] = useState(() => ({ x: gridSettings.offsetX, y: gridSettings.offsetY }));
   const [combatMovementUsed, setCombatMovementUsed] = useState(0);
@@ -127,21 +80,40 @@ export function MapCanvas({ mapImage, mapId }: MapCanvasProps) {
     ? initiativeEntries[currentTurnIndex]?.tokenId
     : null;
 
+  const hasPersistedTokens = useRef(false);
+  const hasPersistedObstacles = useRef(false);
+  const hasPersistedGridSettings = useRef(false);
+
   // Persist tokens & obstacles
   useEffect(() => {
-    localStorage.setItem(`map-tokens-${mapId}`, JSON.stringify(tokens));
+    if (!hasPersistedTokens.current) {
+      hasPersistedTokens.current = true;
+      return;
+    }
+
+    replaceMapTokens(mapId, tokens);
   }, [tokens, mapId]);
 
   useEffect(() => {
-    saveObstacles(mapId, obstacles);
+    if (!hasPersistedObstacles.current) {
+      hasPersistedObstacles.current = true;
+      return;
+    }
+
+    replaceMapObstacles(mapId, obstacles);
   }, [obstacles, mapId]);
 
   useEffect(() => {
-    localStorage.setItem(`map-grid-settings-${mapId}`, JSON.stringify({
+    if (!hasPersistedGridSettings.current) {
+      hasPersistedGridSettings.current = true;
+      return;
+    }
+
+    saveMapGridSettings(mapId, {
       ...gridSettings,
       offsetX: gridOffset.x,
       offsetY: gridOffset.y,
-    }));
+    });
   }, [gridSettings, gridOffset, mapId]);
 
   const handleImgLoad = () => {
