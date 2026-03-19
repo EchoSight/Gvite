@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, ReactNode } from 'react';
-
-export type GameRole = 'dm' | 'player';
+import type { GameRole } from './gameRole';
+import { getGameRole, setGameRole } from './repositories';
 
 interface GameContextValue {
   role: GameRole;
@@ -15,13 +15,11 @@ const GameContext = createContext<GameContextValue>({
 });
 
 export function GameProvider({ children }: { children: ReactNode }) {
-  const [role, setRole] = useState<GameRole>(() => {
-    return (localStorage.getItem('dnd_role') as GameRole) || 'player';
-  });
+  const [role, setRole] = useState<GameRole>(() => getGameRole());
 
   const handleSetRole = (r: GameRole) => {
     setRole(r);
-    localStorage.setItem('dnd_role', r);
+    setGameRole(r);
   };
 
   return (
