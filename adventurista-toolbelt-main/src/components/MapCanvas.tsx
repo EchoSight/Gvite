@@ -15,6 +15,8 @@ import { getCellFromPoint, getCellLabelFromPoint } from '@/lib/gridCoordinates';
 import { isVisible, isMovementBlocked } from '@/lib/visibility';
 import type { GridSettings } from '@/lib/repositories';
 import { useMapSession } from '@/hooks/useMapSessions';
+import { useMultiplayerSession } from '@/lib/MultiplayerSessionContext';
+import { canControlToken } from '@/lib/playerOwnership';
 
 
 interface MapCanvasProps {
@@ -42,6 +44,7 @@ const ZOOM_STEP = 0.2;
 
 export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
   const { isDM } = useGame();
+  const { playerId, linkedCharacterId } = useMultiplayerSession();
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const defaultGridSettings = useMemo<GridSettings>(() => ({
@@ -105,17 +108,32 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
 
   const gridCols = Math.ceil((imgSize.w - gridOffset.x) / gridSize) + 1;
   const gridRows = Math.ceil((imgSize.h - gridOffset.y) / gridSize) + 1;
+  const resolvedTokens = useMemo(() => tokens.map(token => {
+    if (token.type !== 'character') return token;
+
+    const linkedCharacter = charactersRef.current.find(character =>
+      character.id === token.characterId || character.name === token.label,
+    );
+
+    if (!linkedCharacter) return token;
+
+    return {
+      ...token,
+      characterId: token.characterId ?? linkedCharacter.id,
+      ownerPlayerId: token.ownerPlayerId ?? linkedCharacter.ownerPlayerId,
+    };
+  }), [tokens]);
 
   // Vision viewers: all player character tokens
   const viewers = useMemo(() => {
-    return tokens
+    return resolvedTokens
       .filter(t => t.type === 'character')
       .map(t => ({
         x: t.x,
         y: t.y,
         visionRadius: t.visionRadius ?? (DEFAULT_VISION_CELLS * gridSize),
       }));
-  }, [tokens, gridSize]);
+  }, [resolvedTokens, gridSize]);
 
   // Visibility check for tokens (player view)
   const isTokenVisible = useCallback((token: MapToken): boolean => {
@@ -200,9 +218,9 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
   const handleTokenPointerDown = (e: React.PointerEvent, tokenId: string) => {
     if (obstacleTool) return; // Don't grab tokens while drawing obstacles
     e.stopPropagation();
-    const token = tokens.find(t => t.id === tokenId);
+    const token = resolvedTokens.find(t => t.id === tokenId);
     if (!token) return;
-    if (!isDM && token.type === 'monster') return;
+    if (!canControlToken(token, isDM, playerId)) return;
 
     if (combatActive) {
       setSelectedToken(tokenId);
@@ -224,6 +242,11 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
   const handleTokenPointerMove = (e: React.PointerEvent) => {
     if (!draggingToken) return;
     if (combatActive && draggingToken !== currentTurnId) {
+      setDraggingToken(null);
+      return;
+    }
+    const dragging = resolvedTokens.find(token => token.id === draggingToken);
+    if (!dragging || !canControlToken(dragging, isDM, playerId)) {
       setDraggingToken(null);
       return;
     }
@@ -257,9 +280,9 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (!combatMoving || !currentTurnId) return;
 
-    const activeToken = tokens.find(t => t.id === currentTurnId);
+    const activeToken = resolvedTokens.find(t => t.id === currentTurnId);
     if (!activeToken) return;
-    if (!isDM && activeToken.type === 'monster') return;
+    if (!canControlToken(activeToken, isDM, playerId)) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
@@ -337,6 +360,8 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
       hp: char.hp,
       maxHp: char.maxHp,
       visionRadius: DEFAULT_VISION_CELLS * gridSize,
+      characterId: char.id,
+      ownerPlayerId: char.ownerPlayerId,
     };
     dispatch({ type: 'map:token_upsert', token });
     setShowAddMenu(false);
@@ -363,7 +388,7 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
   };
 
   const updateTokenVision = (id: string, radiusCells: number) => {
-    const token = tokens.find(t => t.id === id);
+    const token = resolvedTokens.find(t => t.id === id);
     if (!token) return;
     dispatch({
       type: 'map:token_upsert',
@@ -392,9 +417,12 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
     setInitiativeEntries([]);
   };
 
-  const currentToken = selectedToken ? tokens.find(t => t.id === selectedToken) : null;
-  const currentTurnToken = currentTurnId ? tokens.find(t => t.id === currentTurnId) : null;
-  const canManageCurrentTurn = Boolean(currentTurnToken) && (isDM || currentTurnToken.type === 'character');
+  const currentToken = selectedToken ? resolvedTokens.find(t => t.id === selectedToken) : null;
+  const currentTurnToken = currentTurnId ? resolvedTokens.find(t => t.id === currentTurnId) : null;
+  const canManageCurrentTurn = Boolean(currentTurnToken) && canControlToken(currentTurnToken, isDM, playerId);
+  const linkedToken = linkedCharacterId
+    ? resolvedTokens.find(token => token.type === 'character' && token.characterId === linkedCharacterId)
+    : null;
 
   useEffect(() => {
     if (!canManageCurrentTurn) {
@@ -550,6 +578,14 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
 
           <div className="flex-1" />
 
+          {!isDM && (
+            <div className="text-[10px] text-muted-foreground px-2">
+              {linkedToken
+                ? <>Linked token: <span className="font-mono text-foreground">{linkedToken.label}</span></>
+                : 'Link a character to move its token.'}
+            </div>
+          )}
+
           {/* Add token (DM only) */}
           {isDM && (
             <div className="relative">
@@ -686,7 +722,7 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
             />
 
             {/* Tokens */}
-            {tokens.map(token => {
+            {resolvedTokens.map(token => {
               // Hide tokens not visible to players
               if (!isTokenVisible(token)) return null;
 
@@ -745,6 +781,11 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
                   <p className="text-[8px] font-mono text-foreground text-center mt-0.5 whitespace-nowrap pointer-events-none select-none">
                     {token.label}
                   </p>
+                  {!isDM && token.ownerPlayerId === playerId && (
+                    <p className="text-[8px] font-mono text-center text-secondary pointer-events-none select-none">
+                      YOUR CHARACTER
+                    </p>
+                  )}
                   {isDM && (
                     <button
                       onClick={(e) => { e.stopPropagation(); removeToken(token.id); }}
@@ -760,9 +801,9 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
         </div>
 
         {/* Token list bar */}
-        {tokens.length > 0 && (
+        {resolvedTokens.length > 0 && (
           <div className="bg-card border-t border-border p-2 flex gap-2 flex-wrap shrink-0">
-            {tokens.map(t => (
+            {resolvedTokens.map(t => (
               <div
                 key={t.id}
                 className={`flex items-center gap-1 text-[10px] font-mono cursor-pointer rounded px-1 py-0.5 transition-colors ${
@@ -788,7 +829,7 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
       {/* Right sidebar: Initiative + Combat + Vision */}
       <div className="w-56 shrink-0 bg-card border-l border-border overflow-y-auto hidden md:flex flex-col gap-2 p-2">
         <InitiativeTracker
-          tokens={tokens}
+          tokens={resolvedTokens}
           currentTurnId={currentTurnId}
           entries={initiativeEntries}
           setEntries={setInitiativeEntries}
@@ -803,7 +844,7 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
         {combatActive && currentTurnToken && canManageCurrentTurn && (
           <CombatPanel
             token={currentTurnToken}
-            allTokens={tokens}
+            allTokens={resolvedTokens}
             gridSize={gridSize}
             ftPerCell={ftPerCell}
             onDamageToken={damageToken}

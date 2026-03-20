@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo } from 'react';
 import { NetworkCampaignClient } from '@/lib/networkCampaignSync';
 import { isHostedMultiplayerEnabled } from '@/lib/multiplayerSettings';
+import { createPlayerId } from '@/lib/playerOwnership';
 import { useMultiplayerSettings } from '@/hooks/useMultiplayerSettings';
 
 interface MultiplayerSessionContextValue {
@@ -8,6 +9,10 @@ interface MultiplayerSessionContextValue {
   saveSettings: ReturnType<typeof useMultiplayerSettings>['saveSettings'];
   hosted: boolean;
   hostedClient: NetworkCampaignClient | null;
+  playerId: string;
+  playerName: string;
+  linkedCharacterId: string;
+  setLinkedCharacterId: (characterId: string) => void;
 }
 
 const MultiplayerSessionContext = createContext<MultiplayerSessionContextValue | null>(null);
@@ -29,6 +34,14 @@ export function MultiplayerSessionProvider({ children }: { children: React.React
   );
 
   useEffect(() => {
+    if (settings.playerId) return;
+    saveSettings({
+      ...settings,
+      playerId: createPlayerId(),
+    });
+  }, [saveSettings, settings]);
+
+  useEffect(() => {
     if (!hostedClient) return;
     hostedClient.connect();
     return () => {
@@ -36,9 +49,26 @@ export function MultiplayerSessionProvider({ children }: { children: React.React
     };
   }, [hostedClient]);
 
+  const playerId = settings.playerId || createPlayerId();
+  const playerName = settings.playerName.trim() || 'Player';
+
   const value = useMemo(
-    () => ({ settings, saveSettings, hosted, hostedClient }),
-    [hosted, hostedClient, saveSettings, settings],
+    () => ({
+      settings,
+      saveSettings,
+      hosted,
+      hostedClient,
+      playerId,
+      playerName,
+      linkedCharacterId: settings.linkedCharacterId,
+      setLinkedCharacterId: (characterId: string) => {
+        saveSettings({
+          ...settings,
+          linkedCharacterId: characterId,
+        });
+      },
+    }),
+    [hosted, hostedClient, playerId, playerName, saveSettings, settings],
   );
 
   return (

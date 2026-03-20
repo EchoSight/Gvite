@@ -3,18 +3,23 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Character, formatModifier, getModifier, xpForLevel, getEquippedAC } from '@/lib/types';
 import { useCharacterSession } from '@/hooks/useCharacterSessions';
+import { useMultiplayerSession } from '@/lib/MultiplayerSessionContext';
+import { useGame } from '@/lib/GameContext';
+import { canLinkCharacter, canManageCharacter, getCharacterOwnerLabel } from '@/lib/playerOwnership';
 import { StatBlock } from '@/components/StatBlock';
 import { HpBar } from '@/components/HpBar';
 import { EquipmentRow } from '@/components/EquipmentRow';
 import { EquipmentDrawer } from '@/components/EquipmentDrawer';
-import { ArrowLeft, Plus, Trash2, Edit2, Save, Camera } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Edit2, Save, Camera, Link2, Link2Off } from 'lucide-react';
 import { useRef } from 'react';
 
 export default function CharacterView() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [char, setChar] = useState<Character | null>(null);
-  const { character, updateCharacter, removeCharacter, status } = useCharacterSession(id);
+  const { character, updateCharacter, removeCharacter, linkCharacter, unlinkCharacter, status } = useCharacterSession(id);
+  const { playerId, playerName, linkedCharacterId, setLinkedCharacterId } = useMultiplayerSession();
+  const { isDM } = useGame();
   const [editing, setEditing] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const iconInputRef = useRef<HTMLInputElement>(null);
@@ -44,14 +49,32 @@ export default function CharacterView() {
 
   if (!char) return null;
 
+  const canManage = canManageCharacter(char, isDM, playerId);
+  const canLink = canLinkCharacter(char, isDM, playerId);
+  const isLinkedToCurrentPlayer = char.ownerPlayerId === playerId;
+
   const save = (updated: Character) => {
+    if (!canManage) return;
     setChar(updated);
     void updateCharacter(updated);
   };
 
   const handleDelete = () => {
+    if (!canManage) return;
     void removeCharacter(char.id);
     navigate('/');
+  };
+
+  const handleLink = async () => {
+    await linkCharacter(char.id);
+    setLinkedCharacterId(char.id);
+  };
+
+  const handleUnlink = async () => {
+    await unlinkCharacter(char.id);
+    if (linkedCharacterId === char.id) {
+      setLinkedCharacterId('');
+    }
   };
 
   const xpNext = xpForLevel(char.level + 1);
@@ -89,18 +112,43 @@ export default function CharacterView() {
           <p className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-widest">
             LVL {char.level} {char.race} {char.class}
           </p>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Linked to: <span className="font-mono text-foreground">{getCharacterOwnerLabel(char)}</span>
+            {isLinkedToCurrentPlayer && !isDM ? ` · You are signed in as ${playerName}` : ''}
+          </p>
         </div>
         <div className="flex gap-1 md:gap-2 shrink-0">
+          {status.mode === 'hosted' && (
+            isLinkedToCurrentPlayer || isDM ? (
+              <motion.button
+                onClick={() => void handleUnlink()}
+                className="tactical-card py-1.5 md:py-2 px-2 md:px-3 flex items-center gap-1 md:gap-2 text-[9px] md:text-[10px] uppercase tracking-widest"
+                whileTap={{ scale: 0.98 }}
+              >
+                <Link2Off className="w-3 h-3" /> <span className="hidden sm:inline">UNLINK</span>
+              </motion.button>
+            ) : canLink ? (
+              <motion.button
+                onClick={() => void handleLink()}
+                className="tactical-card py-1.5 md:py-2 px-2 md:px-3 flex items-center gap-1 md:gap-2 text-[9px] md:text-[10px] uppercase tracking-widest"
+                whileTap={{ scale: 0.98 }}
+              >
+                <Link2 className="w-3 h-3" /> <span className="hidden sm:inline">LINK TO ME</span>
+              </motion.button>
+            ) : null
+          )}
           <motion.button
-            onClick={() => setEditing(!editing)}
-            className="tactical-card py-1.5 md:py-2 px-2 md:px-3 flex items-center gap-1 md:gap-2 text-[9px] md:text-[10px] uppercase tracking-widest"
+            onClick={() => canManage && setEditing(!editing)}
+            disabled={!canManage}
+            className="tactical-card py-1.5 md:py-2 px-2 md:px-3 flex items-center gap-1 md:gap-2 text-[9px] md:text-[10px] uppercase tracking-widest disabled:opacity-40"
             whileTap={{ scale: 0.98 }}
           >
             {editing ? <><Save className="w-3 h-3" /> <span className="hidden sm:inline">DONE</span></> : <><Edit2 className="w-3 h-3" /> <span className="hidden sm:inline">EDIT</span></>}
           </motion.button>
           <motion.button
             onClick={handleDelete}
-            className="tactical-card py-1.5 md:py-2 px-2 md:px-3 flex items-center gap-1 md:gap-2 text-[9px] md:text-[10px] uppercase tracking-widest text-destructive"
+            disabled={!canManage}
+            className="tactical-card py-1.5 md:py-2 px-2 md:px-3 flex items-center gap-1 md:gap-2 text-[9px] md:text-[10px] uppercase tracking-widest text-destructive disabled:opacity-40"
             whileTap={{ scale: 0.98 }}
           >
             <Trash2 className="w-3 h-3" /> <span className="hidden sm:inline">DELETE</span>
@@ -117,6 +165,14 @@ export default function CharacterView() {
           transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
         />
       </div>
+
+      {!canManage && status.mode === 'hosted' && (
+        <div className="mb-4 tactical-card border-amber-500/40">
+          <p className="text-xs text-amber-300">
+            This character is linked to <span className="font-mono">{getCharacterOwnerLabel(char)}</span>. Only that player or the DM can edit it.
+          </p>
+        </div>
+      )}
 
       {/* Core Stats Grid - stacks on mobile */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-1 mb-4 md:mb-6">

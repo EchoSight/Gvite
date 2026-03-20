@@ -2,11 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Character } from '@/lib/types';
 import { getEquippedAC } from '@/lib/types';
 import {
+  assignCharacterOwner,
+  canLinkCharacter,
+  canManageCharacter,
+  clearCharacterOwner,
+} from '@/lib/playerOwnership';
+import {
   addCharacter as addLocalCharacter,
   deleteCharacter as deleteLocalCharacter,
   getCharacters,
   updateCharacter as updateLocalCharacter,
 } from '@/lib/repositories';
+import { useGame } from '@/lib/GameContext';
 import { useMultiplayerSession } from '@/lib/MultiplayerSessionContext';
 
 interface SessionStatus {
@@ -35,7 +42,15 @@ export function characterCollectionSnapshotFromCampaign(campaignSnapshot: { camp
 }
 
 export function useCharacterCollectionSession() {
-  const { hosted, hostedClient } = useMultiplayerSession();
+  const {
+    hosted,
+    hostedClient,
+    playerId,
+    playerName,
+    linkedCharacterId,
+    setLinkedCharacterId,
+  } = useMultiplayerSession();
+  const { isDM } = useGame();
   const [snapshot, setSnapshot] = useState<CharacterCollectionSnapshot>(() => ({
     characters: normalizeCharacters(getCharacters()),
     version: 0,
@@ -81,20 +96,29 @@ export function useCharacterCollectionSession() {
     snapshot,
     status,
     createCharacter: async (character: Character) => {
+      const nextCharacter = hosted
+        ? assignCharacterOwner(character, { id: playerId, name: playerName })
+        : character;
+
       if (!hosted || !hostedClient) {
-        addLocalCharacter(character);
+        addLocalCharacter(nextCharacter);
         const nextCharacters = normalizeCharacters(getCharacters());
         setSnapshot(current => ({ ...current, characters: nextCharacters }));
         return nextCharacters;
       }
 
-      await hostedClient.sendEvent({ type: 'character:created', source: 'local-ui', payload: { character } });
+      await hostedClient.sendEvent({ type: 'character:created', source: 'local-ui', payload: { character: nextCharacter } });
       const campaignSnapshot = await hostedClient.fetchSnapshot();
       const nextSnapshot = characterCollectionSnapshotFromCampaign(campaignSnapshot);
       setSnapshot(nextSnapshot);
+      setLinkedCharacterId(nextCharacter.id);
       return nextSnapshot.characters;
     },
     updateCharacter: async (character: Character) => {
+      if (hosted && !canManageCharacter(character, isDM, playerId)) {
+        throw new Error('You can only edit a character linked to your player profile.');
+      }
+
       if (!hosted || !hostedClient) {
         updateLocalCharacter(character);
         const nextCharacters = normalizeCharacters(getCharacters());
@@ -109,6 +133,11 @@ export function useCharacterCollectionSession() {
       return nextSnapshot.characters;
     },
     removeCharacter: async (characterId: string) => {
+      const target = snapshot.characters.find(character => character.id === characterId);
+      if (hosted && !canManageCharacter(target, isDM, playerId)) {
+        throw new Error('You can only delete a character linked to your player profile.');
+      }
+
       if (!hosted || !hostedClient) {
         deleteLocalCharacter(characterId);
         const nextCharacters = normalizeCharacters(getCharacters());
@@ -120,6 +149,65 @@ export function useCharacterCollectionSession() {
       const campaignSnapshot = await hostedClient.fetchSnapshot();
       const nextSnapshot = characterCollectionSnapshotFromCampaign(campaignSnapshot);
       setSnapshot(nextSnapshot);
+      if (linkedCharacterId === characterId) {
+        setLinkedCharacterId('');
+      }
+      return nextSnapshot.characters;
+    },
+    linkCharacter: async (characterId: string) => {
+      const character = snapshot.characters.find(entry => entry.id === characterId);
+      if (!character) {
+        throw new Error('Character not found.');
+      }
+      if (hosted && !canLinkCharacter(character, isDM, playerId)) {
+        throw new Error('This character is already linked to another player.');
+      }
+
+      const linked = assignCharacterOwner(character, { id: playerId, name: playerName });
+
+      if (!hosted || !hostedClient) {
+        updateLocalCharacter(linked);
+        const nextCharacters = normalizeCharacters(getCharacters());
+        setSnapshot(current => ({ ...current, characters: nextCharacters }));
+        setLinkedCharacterId(characterId);
+        return nextCharacters;
+      }
+
+      await hostedClient.sendEvent({ type: 'character:updated', source: 'local-ui', payload: { character: linked } });
+      const campaignSnapshot = await hostedClient.fetchSnapshot();
+      const nextSnapshot = characterCollectionSnapshotFromCampaign(campaignSnapshot);
+      setSnapshot(nextSnapshot);
+      setLinkedCharacterId(characterId);
+      return nextSnapshot.characters;
+    },
+    unlinkCharacter: async (characterId: string) => {
+      const character = snapshot.characters.find(entry => entry.id === characterId);
+      if (!character) {
+        throw new Error('Character not found.');
+      }
+      if (hosted && !canManageCharacter(character, isDM, playerId)) {
+        throw new Error('You can only unlink a character linked to your player profile.');
+      }
+
+      const unlinked = clearCharacterOwner(character);
+
+      if (!hosted || !hostedClient) {
+        updateLocalCharacter(unlinked);
+        const nextCharacters = normalizeCharacters(getCharacters());
+        setSnapshot(current => ({ ...current, characters: nextCharacters }));
+        if (linkedCharacterId === characterId) {
+          setLinkedCharacterId('');
+        }
+        return nextCharacters;
+      }
+
+      await hostedClient.sendEvent({ type: 'character:updated', source: 'local-ui', payload: { character: unlinked } });
+      const campaignSnapshot = await hostedClient.fetchSnapshot();
+      const nextSnapshot = characterCollectionSnapshotFromCampaign(campaignSnapshot);
+      setSnapshot(nextSnapshot);
+      if (linkedCharacterId === characterId) {
+        setLinkedCharacterId('');
+      }
       return nextSnapshot.characters;
     },
   };

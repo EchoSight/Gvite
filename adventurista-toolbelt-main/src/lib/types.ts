@@ -60,6 +60,8 @@ export interface Character {
   abilities: AbilityScore[];
   equipment: EquipmentItem[];
   icon?: string; // base64 data URL for character portrait
+  ownerPlayerId?: string;
+  ownerPlayerName?: string;
   createdAt: string;
 }
 
@@ -328,4 +330,6 @@ export interface MapToken {
   hp?: number;
   maxHp?: number;
   visionRadius?: number;
+  characterId?: string;
+  ownerPlayerId?: string;
 }
