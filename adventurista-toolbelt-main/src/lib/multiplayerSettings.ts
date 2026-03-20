@@ -4,6 +4,9 @@ export interface MultiplayerSettings {
   mode: MultiplayerMode;
   hostUrl: string;
   campaignId: string;
+  playerId: string;
+  playerName: string;
+  linkedCharacterId: string;
 }
 
 const STORAGE_KEY = 'adventurista-multiplayer-settings';
@@ -13,6 +16,9 @@ const defaultSettings: MultiplayerSettings = {
   mode: 'local',
   hostUrl: 'http://127.0.0.1:8787',
   campaignId: 'campaign-dev',
+  playerId: '',
+  playerName: 'Player',
+  linkedCharacterId: '',
 };
 
 export function getDefaultMultiplayerSettings(): MultiplayerSettings {
@@ -31,6 +37,9 @@ export function getMultiplayerSettings(): MultiplayerSettings {
       mode: parsed.mode === 'hosted' ? 'hosted' : 'local',
       hostUrl: parsed.hostUrl?.trim() || defaultSettings.hostUrl,
       campaignId: parsed.campaignId?.trim() || defaultSettings.campaignId,
+      playerId: parsed.playerId?.trim() || defaultSettings.playerId,
+      playerName: parsed.playerName?.trim() || defaultSettings.playerName,
+      linkedCharacterId: parsed.linkedCharacterId?.trim() || defaultSettings.linkedCharacterId,
     };
   } catch {
     return getDefaultMultiplayerSettings();
@@ -42,6 +51,9 @@ export function saveMultiplayerSettings(settings: MultiplayerSettings): Multipla
     mode: settings.mode === 'hosted' ? 'hosted' : 'local',
     hostUrl: settings.hostUrl.trim() || defaultSettings.hostUrl,
     campaignId: settings.campaignId.trim() || defaultSettings.campaignId,
+    playerId: settings.playerId.trim(),
+    playerName: settings.playerName.trim() || defaultSettings.playerName,
+    linkedCharacterId: settings.linkedCharacterId.trim(),
   };
 
   if (typeof window !== 'undefined') {

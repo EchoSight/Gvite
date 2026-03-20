@@ -9,7 +9,7 @@ import { Plus, X, Upload, Maximize2, ArrowLeft, Plug, Server } from 'lucide-reac
 
 export default function Maps() {
   const { snapshot, createMap, removeMap, status } = useMapCollectionSession();
-  const { settings, saveSettings } = useMultiplayerSession();
+  const { settings, saveSettings, playerName, linkedCharacterId } = useMultiplayerSession();
   const { snapshot: characterSnapshot } = useCharacterCollectionSession();
   const { maps } = snapshot;
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
@@ -18,6 +18,7 @@ export default function Maps() {
   const [preview, setPreview] = useState<string | null>(null);
   const [hostUrl, setHostUrl] = useState(settings.hostUrl);
   const [campaignId, setCampaignId] = useState(settings.campaignId);
+  const [nextPlayerName, setNextPlayerName] = useState(settings.playerName);
   const [mode, setMode] = useState(settings.mode);
   const [mapActionPending, setMapActionPending] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -25,6 +26,7 @@ export default function Maps() {
   useEffect(() => {
     setHostUrl(settings.hostUrl);
     setCampaignId(settings.campaignId);
+    setNextPlayerName(settings.playerName);
     setMode(settings.mode);
   }, [settings]);
 
@@ -88,6 +90,9 @@ export default function Maps() {
       mode,
       hostUrl,
       campaignId,
+      playerId: settings.playerId,
+      playerName: nextPlayerName,
+      linkedCharacterId: settings.linkedCharacterId,
     });
   };
 
@@ -144,7 +149,7 @@ export default function Maps() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <label className="space-y-1">
             <span className="stat-label block">MODE</span>
             <select
@@ -174,12 +179,24 @@ export default function Maps() {
               className="w-full bg-transparent font-mono text-sm text-foreground outline-none border-b border-border pb-1 placeholder:text-muted-foreground/50"
             />
           </label>
+          <label className="space-y-1">
+            <span className="stat-label block">PLAYER NAME</span>
+            <input
+              value={nextPlayerName}
+              onChange={e => setNextPlayerName(e.target.value)}
+              placeholder="Aria's Tablet"
+              className="w-full bg-transparent font-mono text-sm text-foreground outline-none border-b border-border pb-1 placeholder:text-muted-foreground/50"
+            />
+          </label>
         </div>
 
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">
               Use Hosted mode to fetch maps from the DM host, upload map assets to the server, and stream live map updates over WebSocket.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Signed in as <span className="font-mono text-foreground">{playerName}</span>{linkedCharacterId ? <> · linked character <span className="font-mono text-foreground">{linkedCharacterId}</span></> : ' · no linked character yet'}.
             </p>
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground/80">
               LAN tip: start the host with <span className="font-mono">HOST=0.0.0.0</span> on the DM machine, then enter that machine&apos;s LAN IP here on every device.

@@ -7,6 +7,7 @@ import {
   AbilityScore, EquipmentItem, CLASS_HIT_DIE, applyRaceAbilityBonuses, getEquippedAC, getModifier, getRaceAbilityBonuses, getRaceProfile
 } from '@/lib/types';
 import { useCharacterCollectionSession } from '@/hooks/useCharacterSessions';
+import { useMultiplayerSession } from '@/lib/MultiplayerSessionContext';
 import { StatBlock } from '@/components/StatBlock';
 import { EquipmentDrawer } from '@/components/EquipmentDrawer';
 import { EquipmentRow } from '@/components/EquipmentRow';
@@ -17,6 +18,7 @@ const HALF_ELF_ABILITY_OPTIONS = ABILITY_NAMES.filter(name => name !== 'CHA');
 export default function CreateCharacter() {
   const navigate = useNavigate();
   const { createCharacter, status } = useCharacterCollectionSession();
+  const { playerName } = useMultiplayerSession();
   const [name, setName] = useState('');
   const [race, setRace] = useState(DND_RACES[0]);
   const [dndClass, setDndClass] = useState(DND_CLASSES[0]);
@@ -114,6 +116,11 @@ export default function CreateCharacter() {
     <div className="flex-1 overflow-y-auto p-4 md:p-6">
       <h1 className="font-display text-base md:text-lg mb-2 text-foreground">INITIATE CHARACTER BUILD.</h1>
       <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-4 md:mb-6">{status.mode === 'hosted' ? `HOSTED CHARACTER SYNC · ${status.state}` : 'LOCAL CHARACTER STORAGE'}</p>
+      {status.mode === 'hosted' && (
+        <p className="text-xs text-muted-foreground mb-4">
+          New hosted characters are automatically linked to <span className="font-mono text-foreground">{playerName}</span>.
+        </p>
+      )}
 
       {/* Identity */}
       <section className="mb-4 md:mb-6">

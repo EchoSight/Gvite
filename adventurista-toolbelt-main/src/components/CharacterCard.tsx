@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Character, formatModifier, getModifier } from '@/lib/types';
+import { getCharacterOwnerLabel } from '@/lib/playerOwnership';
 import { Link } from 'react-router-dom';
 import { HpBar } from './HpBar';
 
@@ -32,6 +33,9 @@ export function CharacterCard({ character }: CharacterCardProps) {
               <h3 className="font-display text-base text-foreground">{character.name}</h3>
               <p className="text-[11px] text-muted-foreground uppercase tracking-widest">
                 LVL {character.level} {character.race} {character.class}
+              </p>
+              <p className="text-[10px] text-muted-foreground">
+                Linked: <span className="font-mono text-foreground">{getCharacterOwnerLabel(character)}</span>
               </p>
             </div>
           </div>
