@@ -17,6 +17,7 @@ import type { GridSettings } from '@/lib/repositories';
 import { useMapSession } from '@/hooks/useMapSessions';
 import { useMultiplayerSession } from '@/lib/MultiplayerSessionContext';
 import { canControlToken } from '@/lib/playerOwnership';
+import { createCombatTurnState, type CombatTurnState } from '@/lib/combat';
 
 
 interface MapCanvasProps {
@@ -81,6 +82,7 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
   const [combatActive, setCombatActive] = useState(false);
   const [currentTurnIndex, setCurrentTurnIndex] = useState(0);
   const [combatMoving, setCombatMoving] = useState(false);
+  const [combatTurnStates, setCombatTurnStates] = useState<Record<string, CombatTurnState>>({});
 
   const charactersRef = useRef<Character[]>(characters);
 
@@ -403,6 +405,7 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
 
   const handleStartCombat = () => {
     if (initiativeEntries.length === 0) return;
+    setCombatTurnStates(Object.fromEntries(initiativeEntries.map(entry => [entry.tokenId, createCombatTurnState()])));
     setCombatActive(true);
     setCurrentTurnIndex(0);
   };
@@ -415,6 +418,7 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
     setCombatActive(false);
     setCurrentTurnIndex(0);
     setInitiativeEntries([]);
+    setCombatTurnStates({});
   };
 
   const currentToken = selectedToken ? resolvedTokens.find(t => t.id === selectedToken) : null;
@@ -429,6 +433,13 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
       setCombatMoving(false);
     }
   }, [canManageCurrentTurn]);
+
+  const updateCombatTurnState = useCallback((tokenId: string, updater: (current: CombatTurnState) => CombatTurnState) => {
+    setCombatTurnStates(current => ({
+      ...current,
+      [tokenId]: updater(current[tokenId] ?? createCombatTurnState()),
+    }));
+  }, []);
 
   return (
     <div className="relative w-full h-full flex">
@@ -848,7 +859,11 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
             gridSize={gridSize}
             ftPerCell={ftPerCell}
             onDamageToken={damageToken}
-            onEndTurn={() => {
+            onEndTurn={(nextState) => {
+              setCombatTurnStates(current => ({
+                ...current,
+                [currentTurnToken.id]: nextState,
+              }));
               setCombatMovementUsed(0);
               setCombatMoving(false);
               handleNextTurn();
@@ -859,6 +874,8 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
             onSetCombatMoving={setCombatMoving}
             combatMoving={combatMoving}
             characters={characters}
+            turnState={combatTurnStates[currentTurnToken.id] ?? createCombatTurnState()}
+            onTurnStateChange={(updater) => updateCombatTurnState(currentTurnToken.id, updater)}
           />
         )}
 
