@@ -25,10 +25,17 @@ import {
   EquipmentItem,
 } from '@/lib/types';
 import {
+  addCondition,
+  advanceTurnState,
   applyTurnAction,
+  canTakeAction,
+  canTakeBonusAction,
+  canTakeReaction,
+  CONDITION_DEFINITIONS,
   CORE_TURN_ACTIONS,
-  createCombatTurnState,
+  formatConditionDuration,
   getTurnMovementLimit,
+  removeCondition,
   type CombatTurnState,
   type CoreTurnAction,
 } from '@/lib/combat';
@@ -39,13 +46,15 @@ interface CombatPanelProps {
   gridSize: number;
   ftPerCell: number;
   onDamageToken: (tokenId: string, damage: number) => void;
-  onEndTurn: () => void;
+  onEndTurn: (nextState: CombatTurnState) => void;
   isCurrentTurn: boolean;
   movementUsed: number;
   onSetMovementUsed: (ft: number) => void;
   onSetCombatMoving: (moving: boolean) => void;
   combatMoving: boolean;
   characters: Character[];
+  turnState: CombatTurnState;
+  onTurnStateChange: (updater: (current: CombatTurnState) => CombatTurnState) => void;
 }
 
 interface AttackResult {
@@ -82,19 +91,23 @@ export function CombatPanel({
   onSetCombatMoving,
   combatMoving,
   characters,
+  turnState,
+  onTurnStateChange,
 }: CombatPanelProps) {
   const [mode, setMode] = useState<'idle' | 'moving' | 'attacking'>('idle');
   const [lastAttack, setLastAttack] = useState<AttackResult | null>(null);
   const [selectedWeapon, setSelectedWeapon] = useState<EquipmentItem | null>(null);
   const [showWeaponSelect, setShowWeaponSelect] = useState(false);
-  const [turnState, setTurnState] = useState<CombatTurnState>(() => createCombatTurnState());
+  const [selectedConditionId, setSelectedConditionId] = useState(
+    CONDITION_DEFINITIONS.find(condition => !['dodging', 'disengaged', 'helping', 'hidden-attempt'].includes(condition.id))?.id ?? 'prone',
+  );
 
   useEffect(() => {
     setMode('idle');
     setLastAttack(null);
     setSelectedWeapon(null);
     setShowWeaponSelect(false);
-    setTurnState(createCombatTurnState());
+    setSelectedConditionId(CONDITION_DEFINITIONS.find(condition => !['dodging', 'disengaged', 'helping', 'hidden-attempt'].includes(condition.id))?.id ?? 'prone');
     onSetCombatMoving(false);
     onSetMovementUsed(0);
   }, [token.id, onSetCombatMoving, onSetMovementUsed]);
@@ -106,6 +119,9 @@ export function CombatPanel({
   const hasAction = turnState.actionAvailable;
   const hasBonusAction = turnState.bonusActionAvailable;
   const hasReaction = turnState.reactionAvailable;
+  const actionBlocked = !canTakeAction(turnState);
+  const bonusBlocked = !canTakeBonusAction(turnState);
+  const reactionBlocked = !canTakeReaction(turnState);
 
   const equippedWeapons = charData ? getEquippedWeapons(charData) : [];
 
@@ -131,7 +147,7 @@ export function CombatPanel({
   }), []);
 
   const handleQuickAction = (action: CoreTurnAction) => {
-    setTurnState(current => applyTurnAction(current, action, token.label));
+    onTurnStateChange(current => applyTurnAction(current, action, token.label));
     setMode('idle');
     setShowWeaponSelect(false);
     if (action.id !== 'dash') {
@@ -140,7 +156,7 @@ export function CombatPanel({
   };
 
   const performAttack = (targetId: string) => {
-    if (!hasAction) return;
+    if (!hasAction || actionBlocked) return;
 
     const weapon = selectedWeapon || availableWeapons[0];
     if (!weapon) return;
@@ -212,7 +228,7 @@ export function CombatPanel({
       rangeText: getWeaponRangeLabel(weapon),
       attackMode: longRangeShot ? 'disadvantage' : 'normal',
     });
-    setTurnState(current => ({
+    onTurnStateChange(current => ({
       ...current,
       actionAvailable: false,
       actionLabel: `Attack (${weapon.name})`,
@@ -244,17 +260,17 @@ export function CombatPanel({
 
       <div className="px-3 py-2 border-b border-border space-y-2">
         <div className="grid grid-cols-3 gap-1">
-          <div className={`rounded-sm border px-2 py-1 ${hasAction ? RESOURCE_STYLES.ready : RESOURCE_STYLES.spent}`}>
+          <div className={`rounded-sm border px-2 py-1 ${hasAction && !actionBlocked ? RESOURCE_STYLES.ready : RESOURCE_STYLES.spent}`}>
             <p className="text-[8px] uppercase tracking-widest">Action</p>
-            <p className="font-mono text-[10px] truncate">{turnState.actionLabel ?? (hasAction ? 'Ready' : 'Spent')}</p>
+            <p className="font-mono text-[10px] truncate">{turnState.actionLabel ?? (actionBlocked ? 'Blocked' : hasAction ? 'Ready' : 'Spent')}</p>
           </div>
-          <div className={`rounded-sm border px-2 py-1 ${hasBonusAction ? RESOURCE_STYLES.ready : RESOURCE_STYLES.spent}`}>
+          <div className={`rounded-sm border px-2 py-1 ${hasBonusAction && !bonusBlocked ? RESOURCE_STYLES.ready : RESOURCE_STYLES.spent}`}>
             <p className="text-[8px] uppercase tracking-widest">Bonus</p>
-            <p className="font-mono text-[10px] truncate">{turnState.bonusActionLabel ?? (hasBonusAction ? 'Ready' : 'Spent')}</p>
+            <p className="font-mono text-[10px] truncate">{turnState.bonusActionLabel ?? (bonusBlocked ? 'Blocked' : hasBonusAction ? 'Ready' : 'Spent')}</p>
           </div>
-          <div className={`rounded-sm border px-2 py-1 ${hasReaction ? RESOURCE_STYLES.ready : RESOURCE_STYLES.spent}`}>
+          <div className={`rounded-sm border px-2 py-1 ${hasReaction && !reactionBlocked ? RESOURCE_STYLES.ready : RESOURCE_STYLES.spent}`}>
             <p className="text-[8px] uppercase tracking-widest">Reaction</p>
-            <p className="font-mono text-[10px] truncate">{turnState.reactionLabel ?? (hasReaction ? 'Ready' : 'Spent')}</p>
+            <p className="font-mono text-[10px] truncate">{turnState.reactionLabel ?? (reactionBlocked ? 'Blocked' : hasReaction ? 'Ready' : 'Spent')}</p>
           </div>
         </div>
 
@@ -268,7 +284,7 @@ export function CombatPanel({
           <div className="w-full bg-muted rounded-full h-1.5 mt-1">
             <div
               className="bg-secondary rounded-full h-1.5 transition-all"
-              style={{ width: `${Math.max(0, remainingFt / maxMovement) * 100}%` }}
+              style={{ width: `${maxMovement > 0 ? Math.max(0, remainingFt / maxMovement) * 100 : 0}%` }}
             />
           </div>
           {turnState.dashActive && (
@@ -281,9 +297,16 @@ export function CombatPanel({
         {turnState.conditions.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {turnState.conditions.map(condition => (
-              <span key={condition} className="px-1.5 py-0.5 rounded-full border border-accent/30 bg-accent/10 text-[9px] uppercase tracking-widest text-accent">
-                {condition}
-              </span>
+              <button
+                key={condition.id}
+                onClick={() => onTurnStateChange(current => removeCondition(current, condition.id, token.label))}
+                className="px-1.5 py-0.5 rounded-full border border-accent/30 bg-accent/10 text-[9px] uppercase tracking-widest text-accent flex items-center gap-1"
+                title={condition.effectSummary}
+              >
+                <span>{condition.name}</span>
+                <span className="text-accent/70">{formatConditionDuration(condition)}</span>
+                <XCircle className="w-3 h-3" />
+              </button>
             ))}
           </div>
         )}
@@ -302,7 +325,7 @@ export function CombatPanel({
           } disabled:opacity-30`}
         >
           <Footprints className="w-3 h-3" />
-          {combatMoving ? 'Click map to move' : `Move (${remainingFt}ft left)`}
+          {remainingFt <= 0 ? 'Movement blocked' : combatMoving ? 'Click map to move' : `Move (${remainingFt}ft left)`}
         </button>
 
         <button
@@ -315,13 +338,13 @@ export function CombatPanel({
               setShowWeaponSelect(true);
             }
           }}
-          disabled={!hasAction}
+          disabled={!hasAction || actionBlocked}
           className={`tactical-card !p-2 flex items-center gap-2 text-[10px] uppercase tracking-wider font-bold transition-colors ${
             mode === 'attacking' ? 'border-accent text-accent' : ''
           } disabled:opacity-30`}
         >
           <Swords className="w-3 h-3" />
-          {!hasAction ? 'Action spent' : mode === 'attacking' ? 'Select weapon & target' : 'Attack'}
+          {actionBlocked ? 'Action blocked' : !hasAction ? 'Action spent' : mode === 'attacking' ? 'Select weapon & target' : 'Attack'}
         </button>
 
         <AnimatePresence>
@@ -400,7 +423,7 @@ export function CombatPanel({
               <button
                 key={action.id}
                 onClick={() => handleQuickAction(action)}
-                disabled={!hasAction}
+                disabled={!hasAction || actionBlocked}
                 className="w-full text-left px-2 py-1.5 rounded-sm border border-border hover:border-secondary hover:text-secondary transition-colors disabled:opacity-30"
               >
                 <div className="flex items-center justify-between gap-2">
@@ -417,7 +440,7 @@ export function CombatPanel({
               <button
                 key={action.id}
                 onClick={() => handleQuickAction(action)}
-                disabled={!hasBonusAction}
+                disabled={!hasBonusAction || bonusBlocked}
                 className="text-left px-2 py-1.5 rounded-sm border border-border hover:border-accent hover:text-accent transition-colors disabled:opacity-30"
               >
                 <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest font-bold">
@@ -430,7 +453,7 @@ export function CombatPanel({
               <button
                 key={action.id}
                 onClick={() => handleQuickAction(action)}
-                disabled={!hasReaction}
+                disabled={!hasReaction || reactionBlocked}
                 className="text-left px-2 py-1.5 rounded-sm border border-border hover:border-foreground hover:text-foreground transition-colors disabled:opacity-30"
               >
                 <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest font-bold">
@@ -440,6 +463,38 @@ export function CombatPanel({
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="mt-1 border border-border rounded-sm p-2 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-muted-foreground">
+              <Sparkles className="w-3 h-3" /> Status automation
+            </div>
+          </div>
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <select
+              className="bg-transparent border border-border rounded-sm px-2 py-1 text-[10px] font-mono text-foreground"
+              value={selectedConditionId}
+              onChange={(e) => setSelectedConditionId(e.target.value)}
+            >
+              {CONDITION_DEFINITIONS.filter(condition => !['dodging','disengaged','helping','hidden-attempt'].includes(condition.id)).map(condition => (
+                <option key={condition.id} value={condition.id}>
+                  {condition.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => {
+                onTurnStateChange(current => addCondition(current, selectedConditionId, token.label));
+              }}
+              className="border border-border rounded-sm px-2 py-1 text-[10px] uppercase tracking-widest font-bold hover:bg-foreground hover:text-background transition-colors"
+            >
+              Apply
+            </button>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Conditions with a numbered badge auto-expire when this token ends future turns. ∞ conditions stay until removed.
+          </p>
         </div>
 
         {lastAttack && (
@@ -479,7 +534,7 @@ export function CombatPanel({
           onClick={() => {
             setMode('idle');
             onSetCombatMoving(false);
-            onEndTurn();
+            onEndTurn(advanceTurnState(turnState, token.label));
           }}
           className="mt-1 tactical-card !p-2 flex items-center justify-center gap-2 text-[10px] uppercase tracking-wider font-bold border-secondary text-secondary"
         >
