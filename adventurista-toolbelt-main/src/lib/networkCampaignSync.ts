@@ -10,8 +10,30 @@ export interface HostConnectionOptions {
 
 export type CampaignEventCallback = (event: CampaignEvent) => void;
 
+function resolveBrowserSafeBaseUrl(baseUrl: string): string {
+  const normalized = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+
+  if (typeof window === 'undefined') {
+    return normalized;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    return normalized;
+  }
+
+  if (parsed.hostname === '0.0.0.0') {
+    parsed.hostname = '127.0.0.1';
+    return parsed.toString().replace(/\/$/, '');
+  }
+
+  return normalized;
+}
+
 function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  return resolveBrowserSafeBaseUrl(baseUrl);
 }
 
 function encodeBase64(bytes: Uint8Array): string {

@@ -43,7 +43,13 @@ export function MultiplayerSessionProvider({ children }: { children: React.React
 
   useEffect(() => {
     if (!hostedClient) return;
-    hostedClient.connect();
+
+    try {
+      hostedClient.connect();
+    } catch (error) {
+      console.error('Failed to connect to hosted multiplayer session.', error);
+    }
+
     return () => {
       hostedClient.disconnect();
     };
