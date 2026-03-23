@@ -16,11 +16,15 @@ npm install
 npm run dev
 ```
 
+Use those commands directly in PowerShell, Command Prompt, or Git Bash. Do **not** prefix them with `sh` in PowerShell; for example, run `npm run stack`, not `sh npm run stack`.
+
 If you want the frontend and multiplayer host running together with one command, use:
 
 ```sh
 npm run stack
 ```
+
+That command works the same way in macOS/Linux shells and in Windows PowerShell/CMD.
 
 ## Available scripts
 
@@ -100,6 +104,14 @@ Optional environment overrides:
 - `CAMPAIGN_ID`
 - `CAMPAIGN_NAME`
 - `HOST_ROOT_DIR`
+
+### Windows troubleshooting
+
+If PowerShell reports that `npm.cmd` is not a valid application for your OS, that usually points to a local Node.js / npm installation issue rather than this project. In that case:
+
+1. Run `node -v` and `Get-Command npm` in PowerShell to confirm which executables are being used.
+2. Reinstall the standard Windows x64 build of Node.js from nodejs.org if `npm.cmd` is missing or corrupted.
+3. Open a new PowerShell window after reinstalling, then retry `npm install` and `npm run stack`.
 
 ### LAN play
 

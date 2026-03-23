@@ -18,6 +18,7 @@ if (!supportedModes.has(mode)) {
 }
 
 const children = [];
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 let exiting = false;
 
 function printHelp() {
@@ -27,7 +28,7 @@ function printHelp() {
 function startProcess(name, command, args, extraEnv = {}) {
   const child = spawn(command, args, {
     stdio: 'inherit',
-    shell: true,
+    shell: false,
     env: {
       ...process.env,
       ...extraEnv,
@@ -86,8 +87,8 @@ process.on('SIGTERM', () => shutdown(0));
 console.log(`[serve-stack] Starting ${mode} stack...`);
 
 if (mode !== 'host') {
-  startProcess('frontend', 'npm', ['run', 'dev']);
+  startProcess('frontend', npmCommand, ['run', 'dev']);
 }
 
 const hostEnv = mode === 'lan' ? { HOST: '0.0.0.0' } : {};
-startProcess('multiplayer host', 'npm', ['run', 'host:dev'], hostEnv);
+startProcess('multiplayer host', npmCommand, ['run', 'host:dev'], hostEnv);
