@@ -10,8 +10,10 @@ import { StatBlock } from '@/components/StatBlock';
 import { HpBar } from '@/components/HpBar';
 import { EquipmentRow } from '@/components/EquipmentRow';
 import { EquipmentDrawer } from '@/components/EquipmentDrawer';
+import { SpellcastingPanel } from '@/components/SpellcastingPanel';
 import { ArrowLeft, Plus, Trash2, Edit2, Save, Camera, Link2, Link2Off } from 'lucide-react';
 import { useRef } from 'react';
+import { normalizeCharacterSpellcasting } from '@/lib/spellcasting';
 
 export default function CharacterView() {
   const { id } = useParams();
@@ -55,8 +57,9 @@ export default function CharacterView() {
 
   const save = (updated: Character) => {
     if (!canManage) return;
-    setChar(updated);
-    void updateCharacter(updated);
+    const normalized = normalizeCharacterSpellcasting(updated);
+    setChar(normalized);
+    void updateCharacter(normalized);
   };
 
   const handleDelete = () => {
@@ -307,6 +310,14 @@ export default function CharacterView() {
           </span>
         </div>
       </section>
+
+      <div className="mt-4 md:mt-6">
+        <SpellcastingPanel
+          character={char}
+          editable={editing && canManage}
+          onChange={save}
+        />
+      </div>
 
       <EquipmentDrawer
         open={drawerOpen}

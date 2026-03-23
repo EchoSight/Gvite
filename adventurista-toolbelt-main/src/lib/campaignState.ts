@@ -1,4 +1,4 @@
-import type { Character, CampaignResource, MapToken } from './types';
+import type { Character, CampaignResource, MapToken, SpellTemplate } from './types';
 import type { GridSettings, MapEntry } from './repositories';
 import type { Obstacle } from './obstacles';
 
@@ -15,6 +15,7 @@ export interface MapStateSnapshot {
   tokens: MapToken[];
   gridSettings: GridSettings | null;
   obstacles: Obstacle[];
+  spellTemplates: SpellTemplate[];
 }
 
 export interface CampaignSnapshot {

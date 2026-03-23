@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { createCampaignEvent, type CampaignEvent, type CampaignEventInput } from '@/lib/campaignEvents';
 import type { CampaignRepository, CreateCampaignInput } from '@/lib/campaignRepository';
 import type { AssetInput, CampaignMetadata, CampaignSnapshot, StoredAsset } from '@/lib/campaignState';
-import type { Character, CampaignResource, MapToken } from '@/lib/types';
+import type { Character, CampaignResource, MapToken, SpellTemplate } from '@/lib/types';
 import type { GridSettings, MapEntry } from '@/lib/repositories';
 import type { Obstacle } from '@/lib/obstacles';
 import { FilesystemAssetStorage } from './fileAssetStorage';
@@ -115,8 +115,8 @@ export class SqliteCampaignRepository implements CampaignRepository {
       SELECT data FROM maps WHERE campaign_id = ${sql(campaignId)} ORDER BY id;
     `).map(row => parseJson<MapEntry>(row.data));
 
-    const states = this.db.query<{ map_id: string; tokens_json: string | null; grid_json: string | null; obstacles_json: string | null }>(`
-      SELECT map_id, tokens_json, grid_json, obstacles_json
+    const states = this.db.query<{ map_id: string; tokens_json: string | null; grid_json: string | null; obstacles_json: string | null; spell_templates_json: string | null }>(`
+      SELECT map_id, tokens_json, grid_json, obstacles_json, spell_templates_json
       FROM map_states
       WHERE campaign_id = ${sql(campaignId)};
     `);
@@ -133,6 +133,7 @@ export class SqliteCampaignRepository implements CampaignRepository {
         tokens: row.tokens_json ? parseJson<MapToken[]>(row.tokens_json) : [],
         gridSettings: row.grid_json ? parseJson<GridSettings>(row.grid_json) : null,
         obstacles: row.obstacles_json ? parseJson<Obstacle[]>(row.obstacles_json) : [],
+        spellTemplates: row.spell_templates_json ? parseJson<SpellTemplate[]>(row.spell_templates_json) : [],
       }])),
       events,
     };
@@ -278,6 +279,7 @@ export class SqliteCampaignRepository implements CampaignRepository {
         tokens_json TEXT,
         grid_json TEXT,
         obstacles_json TEXT,
+        spell_templates_json TEXT,
         PRIMARY KEY (campaign_id, map_id)
       );
       CREATE TABLE IF NOT EXISTS events (
@@ -301,6 +303,11 @@ export class SqliteCampaignRepository implements CampaignRepository {
         created_at TEXT NOT NULL
       );
     `);
+
+    const mapStateColumns = this.db.query<{ name: string }>(`PRAGMA table_info(map_states);`).map(row => row.name);
+    if (!mapStateColumns.includes('spell_templates_json')) {
+      this.db.exec(`ALTER TABLE map_states ADD COLUMN spell_templates_json TEXT;`);
+    }
   }
 
   private applyEvent(campaignId: string, event: CampaignEvent): void {
@@ -328,8 +335,8 @@ export class SqliteCampaignRepository implements CampaignRepository {
         const map = event.payload.map;
         this.upsertJsonRecord('maps', campaignId, map.id, map);
         this.db.exec(`
-          INSERT INTO map_states (campaign_id, map_id, tokens_json, grid_json, obstacles_json)
-          VALUES (${sql(campaignId)}, ${sql(map.id)}, '[]', NULL, '[]')
+          INSERT INTO map_states (campaign_id, map_id, tokens_json, grid_json, obstacles_json, spell_templates_json)
+          VALUES (${sql(campaignId)}, ${sql(map.id)}, '[]', NULL, '[]', '[]')
           ON CONFLICT(campaign_id, map_id) DO NOTHING;
         `);
         return;
@@ -351,6 +358,10 @@ export class SqliteCampaignRepository implements CampaignRepository {
         this.updateMapStateField(campaignId, event.payload.mapId, 'obstacles_json', event.payload.obstacles);
         return;
       }
+      case 'map:spell_templates_updated': {
+        this.updateMapStateField(campaignId, event.payload.mapId, 'spell_templates_json', event.payload.spellTemplates);
+        return;
+      }
       case 'role:set': {
         return;
       }
@@ -369,7 +380,7 @@ export class SqliteCampaignRepository implements CampaignRepository {
     this.db.exec(`DELETE FROM ${table} WHERE campaign_id = ${sql(campaignId)} AND id = ${sql(id)};`);
   }
 
-  private updateMapStateField(campaignId: string, mapId: string, column: 'tokens_json' | 'grid_json' | 'obstacles_json', value: MapToken[] | GridSettings | Obstacle[]): void {
+  private updateMapStateField(campaignId: string, mapId: string, column: 'tokens_json' | 'grid_json' | 'obstacles_json' | 'spell_templates_json', value: MapToken[] | GridSettings | Obstacle[] | SpellTemplate[]): void {
     this.db.exec(`
       INSERT INTO map_states (campaign_id, map_id, ${column})
       VALUES (${sql(campaignId)}, ${sql(mapId)}, ${sql(value)})

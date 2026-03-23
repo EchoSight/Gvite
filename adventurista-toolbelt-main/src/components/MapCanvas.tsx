@@ -4,7 +4,7 @@ import {
   ZoomIn, ZoomOut, RotateCcw, Plus, Trash2, X,
   Grid3X3, Eye, EyeOff, Minus, MousePointer, Move, Slash, Square,
 } from 'lucide-react';
-import { Character, MapToken } from '@/lib/types';
+import { Character, MapToken, SpellTemplate } from '@/lib/types';
 import { useGame } from '@/lib/GameContext';
 import { InitiativeTracker, InitiativeEntry } from './InitiativeTracker';
 import { CombatPanel } from './CombatPanel';
@@ -18,6 +18,8 @@ import { useMapSession } from '@/hooks/useMapSessions';
 import { useMultiplayerSession } from '@/lib/MultiplayerSessionContext';
 import { canControlToken } from '@/lib/playerOwnership';
 import { createCombatTurnState, type CombatTurnState } from '@/lib/combat';
+import { SPELL_CATALOG } from '@/lib/spellcasting';
+import { SpellTemplateLayer } from './SpellTemplateLayer';
 
 
 interface MapCanvasProps {
@@ -56,7 +58,7 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
     offsetY: DEFAULT_GRID_OFFSET.y,
   }), []);
   const { snapshot: mapSnapshot, dispatch } = useMapSession(mapId, defaultGridSettings);
-  const { tokens, obstacles } = mapSnapshot;
+  const { tokens, obstacles, spellTemplates } = mapSnapshot;
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
@@ -70,6 +72,11 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
   const [combatMovementUsed, setCombatMovementUsed] = useState(0);
   const [imgSize, setImgSize] = useState({ w: 800, h: 600 });
   const [selectedToken, setSelectedToken] = useState<string | null>(null);
+  const areaSpellOptions = useMemo(() => SPELL_CATALOG.filter(spell => spell.area), []);
+  const [selectedSpellTemplateId, setSelectedSpellTemplateId] = useState(() => areaSpellOptions[0]?.id ?? '');
+  const [placingSpellTemplate, setPlacingSpellTemplate] = useState(false);
+  const [placingTemplateOrigin, setPlacingTemplateOrigin] = useState<{ x: number; y: number } | null>(null);
+  const [draftSpellTemplate, setDraftSpellTemplate] = useState<SpellTemplate | null>(null);
 
   // Obstacles
   const [obstacleTool, setObstacleTool] = useState<ObstacleTool>(null);
@@ -144,6 +151,62 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
     return isVisible(token.x, token.y, viewers, obstacles);
   }, [isDM, showPlayerPreview, viewers, obstacles]);
 
+
+  const getCanvasPoint = useCallback((clientX: number, clientY: number) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+
+    const rawX = (clientX - rect.left - pan.x) / zoom;
+    const rawY = (clientY - rect.top - pan.y) / zoom;
+
+    if (!showGrid) {
+      return { x: rawX, y: rawY };
+    }
+
+    const cell = getCellFromPoint(rawX, rawY, {
+      ...gridSettings,
+      offsetX: gridOffset.x,
+      offsetY: gridOffset.y,
+    });
+
+    return {
+      x: gridOffset.x + (cell.col * gridSize) + gridSize / 2,
+      y: gridOffset.y + (cell.row * gridSize) + gridSize / 2,
+    };
+  }, [gridOffset.x, gridOffset.y, gridSettings, gridSize, pan.x, pan.y, showGrid, zoom]);
+
+  const selectedAreaSpell = useMemo(
+    () => areaSpellOptions.find(spell => spell.id === selectedSpellTemplateId) ?? areaSpellOptions[0] ?? null,
+    [areaSpellOptions, selectedSpellTemplateId],
+  );
+
+  const buildSpellTemplate = useCallback((origin: { x: number; y: number }, target?: { x: number; y: number } | null): SpellTemplate | null => {
+    if (!selectedAreaSpell?.area) return null;
+
+    return {
+      id: `spell-template-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      spellId: selectedAreaSpell.id,
+      label: selectedAreaSpell.name,
+      shape: selectedAreaSpell.area.shape,
+      origin,
+      target: target ?? undefined,
+      sizeFt: selectedAreaSpell.area.sizeFt,
+      widthFt: selectedAreaSpell.area.widthFt,
+      color: selectedAreaSpell.concentration ? 'hsl(280, 85%, 65%)' : 'hsl(12, 90%, 60%)',
+      opacity: 0.22,
+      casterTokenId: selectedToken ?? undefined,
+      casterCharacterId: resolvedTokens.find(token => token.id === selectedToken)?.characterId,
+      concentrationLinked: selectedAreaSpell.concentration,
+      createdAt: new Date().toISOString(),
+    };
+  }, [resolvedTokens, selectedAreaSpell, selectedToken]);
+
+  const clearTemplatePlacement = useCallback(() => {
+    setPlacingSpellTemplate(false);
+    setPlacingTemplateOrigin(null);
+    setDraftSpellTemplate(null);
+  }, []);
+
   const snapToGrid = useCallback((value: number, axis: 'x' | 'y') => {
     const offset = axis === 'x' ? gridOffset.x : gridOffset.y;
     return Math.round((value - offset) / gridSize) * gridSize + offset;
@@ -201,17 +264,24 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
   }, [clampZoom]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    if (draggingToken || obstacleTool) return;
+    if (draggingToken || obstacleTool || placingSpellTemplate) return;
     setIsPanning(true);
     setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-  }, [pan, draggingToken, obstacleTool]);
+  }, [pan, draggingToken, obstacleTool, placingSpellTemplate]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (placingSpellTemplate && placingTemplateOrigin && selectedAreaSpell?.area && (selectedAreaSpell.area.shape === 'cone' || selectedAreaSpell.area.shape === 'line')) {
+      const point = getCanvasPoint(e.clientX, e.clientY);
+      if (point) {
+        setDraftSpellTemplate(buildSpellTemplate(placingTemplateOrigin, point));
+      }
+    }
+
     if (isPanning && !draggingToken) {
       setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
     }
-  }, [isPanning, panStart, draggingToken]);
+  }, [buildSpellTemplate, draggingToken, getCanvasPoint, isPanning, panStart, placingSpellTemplate, placingTemplateOrigin, selectedAreaSpell]);
 
   const handlePointerUp = useCallback(() => {
     setIsPanning(false);
@@ -280,36 +350,47 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
 
   // Canvas click for combat movement
   const handleCanvasClick = (e: React.MouseEvent) => {
+    if (isDM && placingSpellTemplate && selectedAreaSpell?.area) {
+      const point = getCanvasPoint(e.clientX, e.clientY);
+      if (point) {
+        if (selectedAreaSpell.area.shape === 'circle' || selectedAreaSpell.area.shape === 'square') {
+          const nextTemplate = buildSpellTemplate(point, null);
+          if (nextTemplate) {
+            dispatch({ type: 'map:spell_template_upsert', spellTemplate: nextTemplate });
+          }
+          clearTemplatePlacement();
+          return;
+        }
+
+        if (!placingTemplateOrigin) {
+          setPlacingTemplateOrigin(point);
+          setDraftSpellTemplate(buildSpellTemplate(point, point));
+          return;
+        }
+
+        const nextTemplate = buildSpellTemplate(placingTemplateOrigin, point);
+        if (nextTemplate) {
+          dispatch({ type: 'map:spell_template_upsert', spellTemplate: nextTemplate });
+        }
+        clearTemplatePlacement();
+        return;
+      }
+    }
+
     if (!combatMoving || !currentTurnId) return;
 
     const activeToken = resolvedTokens.find(t => t.id === currentTurnId);
     if (!activeToken) return;
     if (!canControlToken(activeToken, isDM, playerId)) return;
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
 
-    const mouseX = (e.clientX - rect.left - pan.x) / zoom;
-    const mouseY = (e.clientY - rect.top - pan.y) / zoom;
+    const point = getCanvasPoint(e.clientX, e.clientY);
+    if (!point) return;
 
-    let newX = mouseX;
-    let newY = mouseY;
-    if (showGrid) {
-      const nextCell = getCellFromPoint(newX, newY, {
-        ...gridSettings,
-        offsetX: gridOffset.x,
-        offsetY: gridOffset.y,
-      });
-      const snappedCenter = {
-        x: gridOffset.x + (nextCell.col * gridSize) + gridSize / 2,
-        y: gridOffset.y + (nextCell.row * gridSize) + gridSize / 2,
-      };
-      newX = snappedCenter.x;
-      newY = snappedCenter.y;
-    }
+    const newX = point.x;
+    const newY = point.y;
 
-    // Check movement blocking
     if (isMovementBlocked(activeToken.x, activeToken.y, newX, newY, obstacles)) {
-      return; // Path is blocked by an obstacle
+      return;
     }
 
     const dx = Math.abs(newX - activeToken.x) / gridSize;
@@ -587,6 +668,52 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
             </>
           )}
 
+
+          {isDM && areaSpellOptions.length > 0 && (
+            <>
+              <div className="w-px h-5 bg-border mx-1" />
+              <div className="flex items-center gap-1">
+                <select
+                  value={selectedSpellTemplateId}
+                  onChange={(event) => {
+                    setSelectedSpellTemplateId(event.target.value);
+                    setPlacingTemplateOrigin(null);
+                    setDraftSpellTemplate(null);
+                  }}
+                  className="bg-transparent border border-border rounded-sm px-2 py-1 text-[10px] font-mono text-foreground"
+                >
+                  {areaSpellOptions.map(spell => (
+                    <option key={spell.id} value={spell.id} className="bg-card">{spell.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => {
+                    if (placingSpellTemplate) {
+                      clearTemplatePlacement();
+                      return;
+                    }
+                    setPlacingSpellTemplate(true);
+                    setPlacingTemplateOrigin(null);
+                    setDraftSpellTemplate(null);
+                  }}
+                  className={`tactical-card !p-1 px-2 text-[9px] uppercase tracking-wider font-bold ${placingSpellTemplate ? 'border-secondary text-secondary' : ''}`}
+                  title="Place area spell"
+                >
+                  {placingSpellTemplate ? 'Cancel AoE' : 'AoE'}
+                </button>
+                {spellTemplates.length > 0 && (
+                  <button
+                    onClick={() => dispatch({ type: 'map:spell_templates_replace', spellTemplates: [] })}
+                    className="tactical-card !p-1 px-2 text-[9px] uppercase tracking-wider font-bold"
+                    title="Clear spell templates"
+                  >
+                    Clear AoE
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+
           <div className="flex-1" />
 
           {!isDM && (
@@ -652,7 +779,7 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
         <div
           ref={containerRef}
           className={`flex-1 overflow-hidden relative bg-muted/30 ${
-            obstacleTool === 'line' || obstacleTool === 'rect' ? 'cursor-crosshair' :
+            obstacleTool === 'line' || obstacleTool === 'rect' || placingSpellTemplate ? 'cursor-crosshair' :
             combatMoving ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'
           }`}
           onWheel={handleWheel}
@@ -730,6 +857,14 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
               isDM={isDM}
               showPlayerPreview={showPlayerPreview}
               gridOffset={gridOffset}
+            />
+
+            <SpellTemplateLayer
+              templates={spellTemplates}
+              draftTemplate={draftSpellTemplate}
+              gridSize={gridSize}
+              ftPerCell={ftPerCell}
+              imgSize={imgSize}
             />
 
             {/* Tokens */}
@@ -906,6 +1041,26 @@ export function MapCanvas({ mapImage, mapId, characters }: MapCanvasProps) {
               >
                 <Plus className="w-3 h-3" />
               </button>
+            </div>
+          </div>
+        )}
+
+
+        {isDM && spellTemplates.length > 0 && (
+          <div className="border border-border rounded p-2">
+            <p className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold mb-2">Spell Templates</p>
+            <div className="space-y-1">
+              {spellTemplates.map(template => (
+                <div key={template.id} className="flex items-center justify-between gap-2 text-[10px] font-mono">
+                  <span className="truncate">{template.label}</span>
+                  <button
+                    onClick={() => dispatch({ type: 'map:spell_template_remove', spellTemplateId: template.id })}
+                    className="text-destructive hover:text-destructive/80"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}

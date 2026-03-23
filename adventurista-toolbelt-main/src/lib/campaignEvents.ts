@@ -1,5 +1,5 @@
 import type { GameRole } from './gameRole';
-import type { Character, CampaignResource, MapToken } from './types';
+import type { Character, CampaignResource, MapToken, SpellTemplate } from './types';
 import type { GridSettings, MapEntry } from './repositories';
 import type { Obstacle } from './obstacles';
 
@@ -24,7 +24,8 @@ export type CampaignEvent =
   | CampaignEventBase<'map:deleted', { mapId: string }>
   | CampaignEventBase<'map:tokens_updated', { mapId: string; tokens: MapToken[] }>
   | CampaignEventBase<'map:grid_updated', { mapId: string; gridSettings: GridSettings }>
-  | CampaignEventBase<'map:obstacles_updated', { mapId: string; obstacles: Obstacle[] }>;
+  | CampaignEventBase<'map:obstacles_updated', { mapId: string; obstacles: Obstacle[] }>
+  | CampaignEventBase<'map:spell_templates_updated', { mapId: string; spellTemplates: SpellTemplate[] }>;
 
 export type CampaignEventInput = Omit<CampaignEvent, 'id' | 'occurredAt'>;
 
