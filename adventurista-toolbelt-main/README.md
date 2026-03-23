@@ -35,6 +35,7 @@ That command works the same way in macOS/Linux shells and in Windows PowerShell/
 - `npm run host:start` - start the multiplayer host with production-style env vars
 - `npm run stack` - start the Vite app and local multiplayer host together
 - `npm run stack:lan` - start the Vite app plus a LAN-shareable multiplayer host
+- `npm run stack:dm` - start a LAN-shareable multiplayer host, open the published app for the DM, and print player invite links
 - `npm run stack:host` - start only the local multiplayer host helper
 - `npm run build` - create a production build
 - `npm run build:pages` - create a GitHub Pages-friendly static build
@@ -147,6 +148,28 @@ Notes:
 - `127.0.0.1` / `localhost` only work on the same machine that is running the host.
 - For phone/tablet/laptop players, use the DM machine's LAN IP such as `http://192.168.1.42:8787`.
 - If you later want internet play, use a remote-safe setup such as Render, Tailscale, or port forwarding.
+
+### DM browser-launch helper
+
+If you want the DM machine to host locally while using the published GitHub Pages frontend, run:
+
+```sh
+npm run stack:dm
+```
+
+That helper:
+
+- starts the multiplayer host in LAN mode;
+- detects a shareable LAN IP such as `http://192.168.1.42:8787`;
+- opens `https://echosight.github.io/Gvite/` in your default browser with the host URL, campaign id, and DM role prefilled;
+- prints a player join link you can copy to the rest of the table.
+
+Optional environment overrides:
+
+- `PORT`
+- `CAMPAIGN_ID`
+- `DM_PLAYER_NAME`
+- `GVITE_PAGES_URL`
 
 
 ## GitHub Pages deployment

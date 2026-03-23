@@ -25,36 +25,75 @@ export function getDefaultMultiplayerSettings(): MultiplayerSettings {
   return { ...defaultSettings };
 }
 
+function normalizeMultiplayerSettings(settings: Partial<MultiplayerSettings>): MultiplayerSettings {
+  return {
+    mode: settings.mode === 'hosted' ? 'hosted' : 'local',
+    hostUrl: settings.hostUrl?.trim() || defaultSettings.hostUrl,
+    campaignId: settings.campaignId?.trim() || defaultSettings.campaignId,
+    playerId: settings.playerId?.trim() || defaultSettings.playerId,
+    playerName: settings.playerName?.trim() || defaultSettings.playerName,
+    linkedCharacterId: settings.linkedCharacterId?.trim() || defaultSettings.linkedCharacterId,
+  };
+}
+
+export function getMultiplayerSettingsFromUrl(search: string): Partial<MultiplayerSettings> {
+  const normalizedSearch = search.startsWith('?') ? search : `?${search}`;
+  const params = new URLSearchParams(normalizedSearch);
+  const hostUrl = params.get('hostUrl')?.trim() || '';
+  const campaignId = params.get('campaignId')?.trim() || '';
+  const modeParam = params.get('mode')?.trim().toLowerCase();
+
+  const overrides: Partial<MultiplayerSettings> = {};
+
+  if (modeParam === 'hosted' || modeParam === 'local') {
+    overrides.mode = modeParam;
+  } else if (hostUrl || campaignId) {
+    overrides.mode = 'hosted';
+  }
+
+  if (hostUrl) overrides.hostUrl = hostUrl;
+  if (campaignId) overrides.campaignId = campaignId;
+
+  const playerId = params.get('playerId')?.trim();
+  const playerName = params.get('playerName')?.trim();
+  const linkedCharacterId = params.get('linkedCharacterId')?.trim();
+
+  if (playerId) overrides.playerId = playerId;
+  if (playerName) overrides.playerName = playerName;
+  if (linkedCharacterId) overrides.linkedCharacterId = linkedCharacterId;
+
+  return overrides;
+}
+
 export function getMultiplayerSettings(): MultiplayerSettings {
   if (typeof window === 'undefined') return getDefaultMultiplayerSettings();
 
   const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (!stored) return getDefaultMultiplayerSettings();
+  const runtimeOverrides = getMultiplayerSettingsFromUrl(window.location.search);
+
+  if (!stored) {
+    return normalizeMultiplayerSettings({
+      ...getDefaultMultiplayerSettings(),
+      ...runtimeOverrides,
+    });
+  }
 
   try {
     const parsed = JSON.parse(stored) as Partial<MultiplayerSettings>;
-    return {
-      mode: parsed.mode === 'hosted' ? 'hosted' : 'local',
-      hostUrl: parsed.hostUrl?.trim() || defaultSettings.hostUrl,
-      campaignId: parsed.campaignId?.trim() || defaultSettings.campaignId,
-      playerId: parsed.playerId?.trim() || defaultSettings.playerId,
-      playerName: parsed.playerName?.trim() || defaultSettings.playerName,
-      linkedCharacterId: parsed.linkedCharacterId?.trim() || defaultSettings.linkedCharacterId,
-    };
+    return normalizeMultiplayerSettings({
+      ...parsed,
+      ...runtimeOverrides,
+    });
   } catch {
-    return getDefaultMultiplayerSettings();
+    return normalizeMultiplayerSettings({
+      ...getDefaultMultiplayerSettings(),
+      ...runtimeOverrides,
+    });
   }
 }
 
 export function saveMultiplayerSettings(settings: MultiplayerSettings): MultiplayerSettings {
-  const normalized: MultiplayerSettings = {
-    mode: settings.mode === 'hosted' ? 'hosted' : 'local',
-    hostUrl: settings.hostUrl.trim() || defaultSettings.hostUrl,
-    campaignId: settings.campaignId.trim() || defaultSettings.campaignId,
-    playerId: settings.playerId.trim(),
-    playerName: settings.playerName.trim() || defaultSettings.playerName,
-    linkedCharacterId: settings.linkedCharacterId.trim(),
-  };
+  const normalized = normalizeMultiplayerSettings(settings);
 
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));

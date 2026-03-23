@@ -119,6 +119,13 @@ export function deleteResource(id: string, store: KeyValueStore = appStorage): v
 }
 
 export function getGameRole(store: KeyValueStore = appStorage): GameRole {
+  if (typeof window !== 'undefined') {
+    const runtimeRole = new URLSearchParams(window.location.search).get('role')?.trim().toLowerCase();
+    if (runtimeRole === 'dm' || runtimeRole === 'player') {
+      return runtimeRole;
+    }
+  }
+
   const storedRole = store.getItem(storageKeys.role);
   return storedRole === 'dm' ? 'dm' : 'player';
 }

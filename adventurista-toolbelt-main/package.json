@@ -17,6 +17,7 @@
     "test:node": "vitest run src/test/sqliteCampaignRepository.test.ts src/test/campaignHostServer.test.ts src/test/devHostBootstrap.test.ts",
     "stack": "node scripts/serve-stack.mjs",
     "stack:lan": "node scripts/serve-stack.mjs lan",
+    "stack:dm": "node scripts/serve-stack.mjs dm",
     "stack:host": "node scripts/serve-stack.mjs host"
   },
   "dependencies": {
