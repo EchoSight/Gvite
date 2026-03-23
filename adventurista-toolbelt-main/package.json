@@ -14,7 +14,10 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:node": "vitest run src/test/sqliteCampaignRepository.test.ts src/test/campaignHostServer.test.ts src/test/devHostBootstrap.test.ts"
+    "test:node": "vitest run src/test/sqliteCampaignRepository.test.ts src/test/campaignHostServer.test.ts src/test/devHostBootstrap.test.ts",
+    "stack": "node scripts/serve-stack.mjs",
+    "stack:lan": "node scripts/serve-stack.mjs lan",
+    "stack:host": "node scripts/serve-stack.mjs host"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
