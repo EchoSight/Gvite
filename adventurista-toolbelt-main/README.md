@@ -8,6 +8,7 @@ Prerequisites:
 
 - Node.js 20+
 - npm 10+
+- `sqlite3` CLI on your `PATH` if you want to run the multiplayer host locally
 
 Install dependencies and start the development server:
 
@@ -24,7 +25,7 @@ If you want the frontend and multiplayer host running together with one command,
 npm run stack
 ```
 
-That command works the same way in macOS/Linux shells and in Windows PowerShell/CMD. If `npm run stack` is blocked by a broken `npm.cmd` install on Windows, run the helper directly with `node scripts/serve-stack.mjs`.
+That command works the same way in macOS/Linux shells and in Windows PowerShell/CMD. If `npm run stack` is blocked by a broken `npm.cmd` install on Windows, run the helper directly with `node scripts/serve-stack.mjs`. The helper also requires the `sqlite3` CLI to be installed if you want the host process to start successfully.
 
 ## Available scripts
 
@@ -96,6 +97,12 @@ By default, the host:
 - listens on `http://127.0.0.1:8787`
 - uses campaign id `campaign-dev`
 - stores SQLite data and uploaded assets under `.adventurista-host/`
+
+Before starting the multiplayer host, verify the SQLite CLI is available:
+
+```sh
+sqlite3 --version
+```
 
 Optional environment overrides:
 

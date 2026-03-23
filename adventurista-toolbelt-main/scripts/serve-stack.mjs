@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -26,6 +26,21 @@ if (!supportedModes.has(mode)) {
 
 const children = [];
 let exiting = false;
+
+function ensureSqliteCliAvailable() {
+  const result = spawnSync('sqlite3', ['--version'], {
+    cwd: projectRoot,
+    stdio: 'ignore',
+    shell: false,
+  });
+
+  if (result.error && 'code' in result.error && result.error.code === 'ENOENT') {
+    console.error('[serve-stack] The multiplayer host requires the sqlite3 command line tool, but it was not found on your PATH.');
+    console.error('[serve-stack] Install SQLite, make sure the sqlite3 executable is available in your terminal, then rerun the command.');
+    console.error('[serve-stack] If you only want the frontend, run `npm run dev` instead.');
+    process.exit(1);
+  }
+}
 
 function printHelp() {
   console.log(`Adventurista local stack helper\n\nUsage:\n  node scripts/serve-stack.mjs [local|lan|host]\n\nModes:\n  local  Start the Vite app and multiplayer host for same-machine testing.\n  lan    Start the Vite app and multiplayer host with LAN-friendly host binding.\n  host   Start only the multiplayer host.\n\nExamples:\n  npm run stack\n  node scripts/serve-stack.mjs\n  node scripts/serve-stack.mjs lan\n`);
@@ -92,6 +107,7 @@ process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 
 console.log(`[serve-stack] Starting ${mode} stack...`);
+ensureSqliteCliAvailable();
 
 if (mode !== 'host') {
   startProcess('frontend', nodeExecutable, [viteCli]);
