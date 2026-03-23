@@ -1,6 +1,7 @@
-import type { Character, CampaignResource, MapToken } from './types';
+import type { Character, CampaignResource, MapToken, SpellTemplate } from './types';
 import type { GameRole } from './gameRole';
 import { getEquippedAC } from './types';
+import { normalizeCharacterSpellcasting } from './spellcasting';
 import type { Obstacle } from './obstacles';
 import { appStorage, type KeyValueStore, readJson, writeJson } from './storage';
 
@@ -27,6 +28,7 @@ const storageKeys = {
   mapTokens: (mapId: string) => `map-tokens-${mapId}`,
   mapGridSettings: (mapId: string) => `map-grid-settings-${mapId}`,
   mapObstacles: (mapId: string) => `map-obstacles-${mapId}`,
+  mapSpellTemplates: (mapId: string) => `map-spell-templates-${mapId}`,
 };
 
 const defaultResources: CampaignResource[] = [
@@ -66,10 +68,13 @@ const defaultResources: CampaignResource[] = [
 
 export function getCharacters(store: KeyValueStore = appStorage): Character[] {
   const parsed = readJson<Character[]>(store, storageKeys.characters, []);
-  return parsed.map(character => ({
-    ...character,
-    ac: getEquippedAC(character),
-  }));
+  return parsed.map(character => {
+    const normalized = normalizeCharacterSpellcasting(character);
+    return {
+      ...normalized,
+      ac: getEquippedAC(normalized),
+    };
+  });
 }
 
 export function saveCharacters(chars: Character[], store: KeyValueStore = appStorage): void {
@@ -136,6 +141,7 @@ export function deleteMap(mapId: string, store: KeyValueStore = appStorage): Map
   store.removeItem(storageKeys.mapTokens(mapId));
   store.removeItem(storageKeys.mapGridSettings(mapId));
   store.removeItem(storageKeys.mapObstacles(mapId));
+  store.removeItem(storageKeys.mapSpellTemplates(mapId));
   return updatedMaps;
 }
 
@@ -170,4 +176,13 @@ export function loadObstacles(mapId: string, store: KeyValueStore = appStorage):
 
 export function saveObstacles(mapId: string, obstacles: Obstacle[], store: KeyValueStore = appStorage): void {
   writeJson(store, storageKeys.mapObstacles(mapId), obstacles);
+}
+
+
+export function loadSpellTemplates(mapId: string, store: KeyValueStore = appStorage): SpellTemplate[] {
+  return readJson<SpellTemplate[]>(store, storageKeys.mapSpellTemplates(mapId), []);
+}
+
+export function saveSpellTemplates(mapId: string, spellTemplates: SpellTemplate[], store: KeyValueStore = appStorage): void {
+  writeJson(store, storageKeys.mapSpellTemplates(mapId), spellTemplates);
 }

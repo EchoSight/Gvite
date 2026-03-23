@@ -1,4 +1,4 @@
-import type { MapToken } from './types';
+import type { MapToken, SpellTemplate } from './types';
 import type { GridSettings, MapEntry } from './repositories';
 import type { Obstacle } from './obstacles';
 import type { CampaignEvent, CampaignEventInput } from './campaignEvents';
@@ -11,6 +11,7 @@ import {
   createMap,
   removeMap,
   replaceMapObstacles,
+  replaceMapSpellTemplates,
   replaceMapTokens,
   saveMapGridSettings,
 } from './campaignMutations';
@@ -19,6 +20,7 @@ import {
   loadGridSettings,
   loadMapTokens,
   loadObstacles,
+  loadSpellTemplates,
 } from './repositories';
 
 export interface MapCollectionSnapshot {
@@ -31,6 +33,7 @@ export interface MapSnapshot {
   tokens: MapToken[];
   gridSettings: GridSettings;
   obstacles: Obstacle[];
+  spellTemplates: SpellTemplate[];
   version: number;
 }
 
@@ -42,7 +45,10 @@ export type MapIntent =
   | { type: 'map:token_upsert'; token: MapToken }
   | { type: 'map:token_remove'; tokenId: string }
   | { type: 'map:grid_update'; gridSettings: GridSettings }
-  | { type: 'map:obstacles_replace'; obstacles: Obstacle[] };
+  | { type: 'map:obstacles_replace'; obstacles: Obstacle[] }
+  | { type: 'map:spell_templates_replace'; spellTemplates: SpellTemplate[] }
+  | { type: 'map:spell_template_upsert'; spellTemplate: SpellTemplate }
+  | { type: 'map:spell_template_remove'; spellTemplateId: string };
 
 interface SessionOptions {
   store?: KeyValueStore;
@@ -127,8 +133,34 @@ export function resolveMapIntent(snapshot: MapSnapshot, intent: MapIntent): Camp
       return { type: 'map:grid_updated', source: 'local-ui', payload: { mapId: snapshot.mapId, gridSettings: intent.gridSettings } };
     case 'map:obstacles_replace':
       return { type: 'map:obstacles_updated', source: 'local-ui', payload: { mapId: snapshot.mapId, obstacles: intent.obstacles } };
+
+    case 'map:spell_templates_replace':
+      return { type: 'map:spell_templates_updated', source: 'local-ui', payload: { mapId: snapshot.mapId, spellTemplates: intent.spellTemplates } };
+    case 'map:spell_template_upsert': {
+      const existing = snapshot.spellTemplates.some(template => template.id === intent.spellTemplate.id);
+      return {
+        type: 'map:spell_templates_updated',
+        source: 'local-ui',
+        payload: {
+          mapId: snapshot.mapId,
+          spellTemplates: existing
+            ? snapshot.spellTemplates.map(template => template.id === intent.spellTemplate.id ? intent.spellTemplate : template)
+            : [...snapshot.spellTemplates, intent.spellTemplate],
+        },
+      };
+    }
+    case 'map:spell_template_remove':
+      return {
+        type: 'map:spell_templates_updated',
+        source: 'local-ui',
+        payload: {
+          mapId: snapshot.mapId,
+          spellTemplates: snapshot.spellTemplates.filter(template => template.id !== intent.spellTemplateId),
+        },
+      };
   }
 }
+
 
 export function mapCollectionSnapshotFromCampaign(snapshot: CampaignSnapshot): MapCollectionSnapshot {
   return {
@@ -149,6 +181,7 @@ export function mapSnapshotFromCampaign(
     tokens: mapState?.tokens ?? [],
     gridSettings: mapState?.gridSettings ?? fallbackGridSettings,
     obstacles: mapState?.obstacles ?? [],
+    spellTemplates: mapState?.spellTemplates ?? [],
     version: snapshot.campaign.version,
   };
 }
@@ -220,6 +253,7 @@ export class MapSession {
       tokens: loadMapTokens(this.mapId, this.options.store),
       gridSettings: loadGridSettings(this.mapId, this.fallbackGridSettings, this.options.store),
       obstacles: loadObstacles(this.mapId, this.options.store),
+      spellTemplates: loadSpellTemplates(this.mapId, this.options.store),
       version: this.version,
     };
   }
@@ -246,6 +280,9 @@ export class MapSession {
         return;
       case 'map:obstacles_updated':
         replaceMapObstacles(this.mapId, event.payload.obstacles, this.options);
+        return;
+      case 'map:spell_templates_updated':
+        replaceMapSpellTemplates(this.mapId, event.payload.spellTemplates, this.options);
         return;
     }
   }

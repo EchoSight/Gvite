@@ -24,6 +24,84 @@ export interface RaceProfile {
   };
 }
 
+
+export type SpellCastingAbility = 'INT' | 'WIS' | 'CHA';
+
+export type SpellAreaShape = 'circle' | 'cone' | 'line' | 'square';
+
+export type SpellActionType = 'action' | 'bonus' | 'reaction' | 'minute' | 'special';
+
+export interface SpellAreaDefinition {
+  shape: SpellAreaShape;
+  sizeFt: number;
+  widthFt?: number;
+}
+
+export interface SpellDefinition {
+  id: string;
+  name: string;
+  level: number;
+  school: string;
+  castingTime: SpellActionType;
+  rangeText: string;
+  durationText: string;
+  concentration: boolean;
+  ritual: boolean;
+  area?: SpellAreaDefinition;
+  tags: string[];
+  description?: string;
+}
+
+export interface CharacterSpell {
+  spellId: string;
+  source: 'class' | 'race' | 'feat' | 'item' | 'custom';
+  prepared: boolean;
+  known: boolean;
+  notes?: string;
+}
+
+export interface SpellSlotTrack {
+  level: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+  max: number;
+  used: number;
+}
+
+export interface PactSlotTrack {
+  level: number;
+  max: number;
+  used: number;
+}
+
+export interface CharacterSpellcasting {
+  enabled: boolean;
+  spellcastingAbility?: SpellCastingAbility;
+  spellSaveDc?: number;
+  spellAttackBonus?: number;
+  ritualCasting?: boolean;
+  concentrationSpellId?: string | null;
+  concentrationSpellName?: string | null;
+  slots: SpellSlotTrack[];
+  pactSlots?: PactSlotTrack | null;
+  spells: CharacterSpell[];
+}
+
+export interface SpellTemplate {
+  id: string;
+  spellId?: string;
+  label: string;
+  shape: SpellAreaShape;
+  origin: { x: number; y: number };
+  target?: { x: number; y: number };
+  sizeFt: number;
+  widthFt?: number;
+  color: string;
+  opacity: number;
+  casterTokenId?: string;
+  casterCharacterId?: string;
+  concentrationLinked?: boolean;
+  createdAt: string;
+}
+
 export interface EquipmentItem {
   id: string;
   name: string;
@@ -63,6 +141,7 @@ export interface Character {
   ownerPlayerId?: string;
   ownerPlayerName?: string;
   createdAt: string;
+  spellcasting?: CharacterSpellcasting;
 }
 
 export interface CampaignResource {

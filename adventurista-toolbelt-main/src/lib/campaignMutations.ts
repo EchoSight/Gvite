@@ -1,5 +1,5 @@
 import type { GameRole } from './gameRole';
-import type { Character, CampaignResource, MapToken } from './types';
+import type { Character, CampaignResource, MapToken, SpellTemplate } from './types';
 import type { GridSettings, MapEntry } from './repositories';
 import type { Obstacle } from './obstacles';
 import type { KeyValueStore } from './storage';
@@ -16,6 +16,7 @@ import {
   saveMaps,
   saveMapTokens,
   saveObstacles,
+  saveSpellTemplates,
   setGameRole,
   updateCharacter,
   getMaps,
@@ -102,4 +103,11 @@ export function replaceMapObstacles(mapId: string, obstacles: Obstacle[], option
   const { store, sync, source } = getMutationContext(options);
   saveObstacles(mapId, obstacles, store);
   sync.emit({ type: 'map:obstacles_updated', source, payload: { mapId, obstacles } });
+}
+
+
+export function replaceMapSpellTemplates(mapId: string, spellTemplates: SpellTemplate[], options?: MutationOptions): void {
+  const { store, sync, source } = getMutationContext(options);
+  saveSpellTemplates(mapId, spellTemplates, store);
+  sync.emit({ type: 'map:spell_templates_updated', source, payload: { mapId, spellTemplates } });
 }

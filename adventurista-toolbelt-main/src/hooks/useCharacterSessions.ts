@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Character } from '@/lib/types';
 import { getEquippedAC } from '@/lib/types';
+import { normalizeCharacterSpellcasting } from '@/lib/spellcasting';
 import {
   assignCharacterOwner,
   canLinkCharacter,
@@ -28,10 +29,13 @@ export interface CharacterCollectionSnapshot {
 }
 
 function normalizeCharacters(characters: Character[]): Character[] {
-  return characters.map(character => ({
-    ...character,
-    ac: getEquippedAC(character),
-  }));
+  return characters.map(character => {
+    const normalized = normalizeCharacterSpellcasting(character);
+    return {
+      ...normalized,
+      ac: getEquippedAC(normalized),
+    };
+  });
 }
 
 export function characterCollectionSnapshotFromCampaign(campaignSnapshot: { campaign: { version: number }; characters: Character[] }): CharacterCollectionSnapshot {

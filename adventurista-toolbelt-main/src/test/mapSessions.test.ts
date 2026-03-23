@@ -50,18 +50,34 @@ describe('map sessions', () => {
       type: 'map:obstacles_replace',
       obstacles: [{ id: 'obs-1', type: 'line', x1: 0, y1: 0, x2: 20, y2: 20, blocksVision: true, blocksMovement: false }],
     });
+    session.dispatch({
+      type: 'map:spell_template_upsert',
+      spellTemplate: {
+        id: 'spell-1',
+        label: 'Fireball',
+        shape: 'circle',
+        origin: { x: 120, y: 160 },
+        sizeFt: 20,
+        color: 'orange',
+        opacity: 0.2,
+        createdAt: '2026-03-19T00:00:00.000Z',
+      },
+    });
 
     const snapshot = session.getSnapshot();
     unsubscribe();
 
-    expect(snapshot.version).toBe(5);
-    expect(observedVersions).toEqual([1, 2, 3, 4, 5]);
+    expect(snapshot.version).toBe(6);
+    expect(observedVersions).toEqual([1, 2, 3, 4, 5, 6]);
     expect(snapshot.tokens).toEqual([
       expect.objectContaining({ id: 'token-1', x: 60, y: 220, hp: 13, maxHp: 20 }),
     ]);
     expect(snapshot.gridSettings.offsetX).toBe(12);
     expect(snapshot.obstacles).toEqual([
       expect.objectContaining({ id: 'obs-1', type: 'line' }),
+    ]);
+    expect(snapshot.spellTemplates).toEqual([
+      expect.objectContaining({ id: 'spell-1', label: 'Fireball', shape: 'circle' }),
     ]);
   });
 
@@ -101,6 +117,7 @@ describe('map sessions', () => {
           tokens: [{ id: 'token-1', label: 'Aria', x: 40, y: 80, color: 'blue', type: 'character', hp: 10, maxHp: 12 }],
           gridSettings: { ...defaultGridSettings, offsetX: 8 },
           obstacles: [],
+          spellTemplates: [],
         },
       },
       events: [],
@@ -112,6 +129,7 @@ describe('map sessions', () => {
       tokens: [expect.objectContaining({ id: 'token-1', x: 40, y: 80 })],
       gridSettings: expect.objectContaining({ offsetX: 8 }),
       obstacles: [],
+      spellTemplates: [],
       version: 7,
     });
 

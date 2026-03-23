@@ -7,6 +7,7 @@ import {
   AbilityScore, EquipmentItem, CLASS_HIT_DIE, applyRaceAbilityBonuses, getEquippedAC, getModifier, getRaceAbilityBonuses, getRaceProfile
 } from '@/lib/types';
 import { useCharacterCollectionSession } from '@/hooks/useCharacterSessions';
+import { createSpellcastingState, normalizeCharacterSpellcasting } from '@/lib/spellcasting';
 import { useMultiplayerSession } from '@/lib/MultiplayerSessionContext';
 import { StatBlock } from '@/components/StatBlock';
 import { EquipmentDrawer } from '@/components/EquipmentDrawer';
@@ -75,7 +76,7 @@ export default function CreateCharacter() {
 
   const handleCreate = async () => {
     if (!name.trim()) return;
-    const char: Character = {
+    const char = normalizeCharacterSpellcasting({
       id: `char-${Date.now()}`,
       name: name.trim(),
       race,
@@ -89,7 +90,8 @@ export default function CreateCharacter() {
       abilities: finalAbilities,
       equipment,
       createdAt: new Date().toISOString(),
-    };
+      spellcasting: createSpellcastingState(dndClass, level),
+    } satisfies Character);
     await createCharacter(char);
     navigate(`/character/${char.id}`);
   };
