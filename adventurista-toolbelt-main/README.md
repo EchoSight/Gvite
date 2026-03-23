@@ -16,12 +16,21 @@ npm install
 npm run dev
 ```
 
+If you want the frontend and multiplayer host running together with one command, use:
+
+```sh
+npm run stack
+```
+
 ## Available scripts
 
 - `npm run dev` - start the Vite development server
 - `npm run host:dev` - start the DM-hosted multiplayer development server
 - `HOST=0.0.0.0 npm run host:dev` - bind the host for LAN play and print shareable LAN URLs
 - `npm run host:start` - start the multiplayer host with production-style env vars
+- `npm run stack` - start the Vite app and local multiplayer host together
+- `npm run stack:lan` - start the Vite app plus a LAN-shareable multiplayer host
+- `npm run stack:host` - start only the local multiplayer host helper
 - `npm run build` - create a production build
 - `npm run build:pages` - create a GitHub Pages-friendly static build
 - `npm run preview` - preview the production build locally
@@ -61,7 +70,18 @@ npm run test:node
 
 ## Running the development multiplayer host
 
-Start the DM host in a separate terminal:
+For the simplest local workflow, start both the frontend and DM host together:
+
+```sh
+npm run stack
+```
+
+This starts:
+
+- the Vite frontend on port `8080`
+- the multiplayer host on port `8787`
+
+If you only want the backend host, keep using:
 
 ```sh
 npm run host:dev
@@ -83,7 +103,13 @@ Optional environment overrides:
 
 ### LAN play
 
-To let other devices on the same network join the host:
+To let other devices on the same network join the host and keep the frontend running locally:
+
+```sh
+npm run stack:lan
+```
+
+If you only need the backend host for LAN play, you can still run:
 
 ```sh
 HOST=0.0.0.0 npm run host:dev
