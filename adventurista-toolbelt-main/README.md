@@ -16,12 +16,25 @@ npm install
 npm run dev
 ```
 
+Use those commands directly in PowerShell, Command Prompt, or Git Bash. Do **not** prefix them with `sh` in PowerShell; for example, run `npm run stack`, not `sh npm run stack`.
+
+If you want the frontend and multiplayer host running together with one command, use:
+
+```sh
+npm run stack
+```
+
+That command works the same way in macOS/Linux shells and in Windows PowerShell/CMD.
+
 ## Available scripts
 
 - `npm run dev` - start the Vite development server
 - `npm run host:dev` - start the DM-hosted multiplayer development server
 - `HOST=0.0.0.0 npm run host:dev` - bind the host for LAN play and print shareable LAN URLs
 - `npm run host:start` - start the multiplayer host with production-style env vars
+- `npm run stack` - start the Vite app and local multiplayer host together
+- `npm run stack:lan` - start the Vite app plus a LAN-shareable multiplayer host
+- `npm run stack:host` - start only the local multiplayer host helper
 - `npm run build` - create a production build
 - `npm run build:pages` - create a GitHub Pages-friendly static build
 - `npm run preview` - preview the production build locally
@@ -61,7 +74,18 @@ npm run test:node
 
 ## Running the development multiplayer host
 
-Start the DM host in a separate terminal:
+For the simplest local workflow, start both the frontend and DM host together:
+
+```sh
+npm run stack
+```
+
+This starts:
+
+- the Vite frontend on port `8080`
+- the multiplayer host on port `8787`
+
+If you only want the backend host, keep using:
 
 ```sh
 npm run host:dev
@@ -81,9 +105,23 @@ Optional environment overrides:
 - `CAMPAIGN_NAME`
 - `HOST_ROOT_DIR`
 
+### Windows troubleshooting
+
+If PowerShell reports that `npm.cmd` is not a valid application for your OS, that usually points to a local Node.js / npm installation issue rather than this project. In that case:
+
+1. Run `node -v` and `Get-Command npm` in PowerShell to confirm which executables are being used.
+2. Reinstall the standard Windows x64 build of Node.js from nodejs.org if `npm.cmd` is missing or corrupted.
+3. Open a new PowerShell window after reinstalling, then retry `npm install` and `npm run stack`.
+
 ### LAN play
 
-To let other devices on the same network join the host:
+To let other devices on the same network join the host and keep the frontend running locally:
+
+```sh
+npm run stack:lan
+```
+
+If you only need the backend host for LAN play, you can still run:
 
 ```sh
 HOST=0.0.0.0 npm run host:dev
