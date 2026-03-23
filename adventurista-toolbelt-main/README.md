@@ -24,7 +24,7 @@ If you want the frontend and multiplayer host running together with one command,
 npm run stack
 ```
 
-That command works the same way in macOS/Linux shells and in Windows PowerShell/CMD.
+That command works the same way in macOS/Linux shells and in Windows PowerShell/CMD. If `npm run stack` is blocked by a broken `npm.cmd` install on Windows, run the helper directly with `node scripts/serve-stack.mjs`.
 
 ## Available scripts
 
@@ -111,7 +111,8 @@ If PowerShell reports that `npm.cmd` is not a valid application for your OS, tha
 
 1. Run `node -v` and `Get-Command npm` in PowerShell to confirm which executables are being used.
 2. Reinstall the standard Windows x64 build of Node.js from nodejs.org if `npm.cmd` is missing or corrupted.
-3. Open a new PowerShell window after reinstalling, then retry `npm install` and `npm run stack`.
+3. If dependencies are already installed, you can bypass the npm wrapper with `node scripts/serve-stack.mjs`.
+4. Otherwise, open a new PowerShell window after reinstalling Node.js, then retry `npm install` and `npm run stack`.
 
 ### LAN play
 

@@ -1,8 +1,15 @@
 import { spawn } from 'node:child_process';
+import { dirname, resolve } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 const rawMode = process.argv[2] ?? 'local';
 const mode = rawMode.toLowerCase();
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const projectRoot = resolve(scriptDir, '..');
+const nodeExecutable = process.execPath;
+const viteCli = resolve(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js');
+const viteNodeCli = resolve(projectRoot, 'node_modules', 'vite-node', 'vite-node.mjs');
 
 if (mode === '--help' || mode === '-h' || mode === 'help') {
   printHelp();
@@ -18,15 +25,15 @@ if (!supportedModes.has(mode)) {
 }
 
 const children = [];
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 let exiting = false;
 
 function printHelp() {
-  console.log(`Adventurista local stack helper\n\nUsage:\n  node scripts/serve-stack.mjs [local|lan|host]\n\nModes:\n  local  Start the Vite app and multiplayer host for same-machine testing.\n  lan    Start the Vite app and multiplayer host with LAN-friendly host binding.\n  host   Start only the multiplayer host.\n\nExamples:\n  npm run stack\n  npm run stack:lan\n  npm run stack:host\n`);
+  console.log(`Adventurista local stack helper\n\nUsage:\n  node scripts/serve-stack.mjs [local|lan|host]\n\nModes:\n  local  Start the Vite app and multiplayer host for same-machine testing.\n  lan    Start the Vite app and multiplayer host with LAN-friendly host binding.\n  host   Start only the multiplayer host.\n\nExamples:\n  npm run stack\n  node scripts/serve-stack.mjs\n  node scripts/serve-stack.mjs lan\n`);
 }
 
 function startProcess(name, command, args, extraEnv = {}) {
   const child = spawn(command, args, {
+    cwd: projectRoot,
     stdio: 'inherit',
     shell: false,
     env: {
@@ -87,8 +94,8 @@ process.on('SIGTERM', () => shutdown(0));
 console.log(`[serve-stack] Starting ${mode} stack...`);
 
 if (mode !== 'host') {
-  startProcess('frontend', npmCommand, ['run', 'dev']);
+  startProcess('frontend', nodeExecutable, [viteCli]);
 }
 
 const hostEnv = mode === 'lan' ? { HOST: '0.0.0.0' } : {};
-startProcess('multiplayer host', npmCommand, ['run', 'host:dev'], hostEnv);
+startProcess('multiplayer host', nodeExecutable, [viteNodeCli, '--config', 'vite.config.ts', '--script', 'src/server/devHost.ts'], hostEnv);
