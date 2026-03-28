@@ -36,9 +36,9 @@ Make multiplayer feel like Jackbox:
 
 ### Phase 3: controller join route
 
-1. Add `/join` route for mobile-friendly player flow.
-2. Submit code + display name.
-3. Persist returned `sessionId`, `campaignId`, and `hostUrl` into multiplayer settings.
+1. ✅ Add `/join` route for mobile-friendly player flow.
+2. ✅ Submit code + display name.
+3. ✅ Persist returned `sessionId`, `campaignId`, and `hostUrl` into multiplayer settings.
 
 ### Phase 4: permissioning hardening
 

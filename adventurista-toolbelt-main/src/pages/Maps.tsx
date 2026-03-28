@@ -38,6 +38,9 @@ export default function Maps() {
 
   const activeMap = maps.find(m => m.id === activeMapId);
   const hostUrlLooksLocalOnly = /^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(\/|$)/i.test(hostUrl.trim());
+  const playerJoinUrl = typeof window === 'undefined'
+    ? ''
+    : `${window.location.origin}${window.location.pathname}#/join?hostUrl=${encodeURIComponent(hostUrl)}&code=${encodeURIComponent(roomCode)}`;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -347,10 +350,15 @@ export default function Maps() {
         </div>
 
         {roomCode && (
-          <p className="text-xs text-muted-foreground">
-            Room code <span className="font-mono text-foreground">{roomCode}</span>
-            {roomCodeExpiresAt ? <> · expires {new Date(roomCodeExpiresAt).toLocaleString()}</> : null}
-          </p>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Room code <span className="font-mono text-foreground">{roomCode}</span>
+              {roomCodeExpiresAt ? <> · expires {new Date(roomCodeExpiresAt).toLocaleString()}</> : null}
+            </p>
+            <p className="text-xs text-muted-foreground break-all">
+              Player join URL: <span className="font-mono text-foreground">{playerJoinUrl}</span>
+            </p>
+          </div>
         )}
 
         {roomPlayers.length > 0 && (
