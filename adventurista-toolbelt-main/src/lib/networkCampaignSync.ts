@@ -10,6 +10,21 @@ export interface HostConnectionOptions {
 
 export type CampaignEventCallback = (event: CampaignEvent) => void;
 
+export interface LobbyCreateResponse {
+  code: string;
+  campaignId: string;
+  hostUrl: string;
+  expiresAt: string;
+}
+
+export interface LobbyJoinResponse {
+  code: string;
+  campaignId: string;
+  hostUrl: string;
+  sessionId: string;
+  playerName: string;
+}
+
 function resolveBrowserSafeBaseUrl(baseUrl: string): string {
   const normalized = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
 
@@ -34,6 +49,10 @@ function resolveBrowserSafeBaseUrl(baseUrl: string): string {
 
 function normalizeBaseUrl(baseUrl: string): string {
   return resolveBrowserSafeBaseUrl(baseUrl);
+}
+
+function getFetchImpl(fetchImpl?: typeof fetch): typeof fetch {
+  return (fetchImpl ?? globalThis.fetch).bind(globalThis);
 }
 
 function encodeBase64(bytes: Uint8Array): string {
@@ -62,7 +81,7 @@ export class NetworkCampaignClient {
   private readonly listeners = new Set<CampaignEventCallback>();
 
   constructor(private readonly options: HostConnectionOptions) {
-    this.fetchImpl = (options.fetchImpl ?? globalThis.fetch).bind(globalThis);
+    this.fetchImpl = getFetchImpl(options.fetchImpl);
     this.wsFactory = options.webSocketFactory;
   }
 
@@ -164,4 +183,49 @@ export class NetworkCampaignClient {
       this.listeners.delete(listener);
     };
   }
+}
+
+export async function createLobbyInvite(baseUrl: string, campaignId: string, options?: {
+  hostUrl?: string;
+  ttlMinutes?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<LobbyCreateResponse> {
+  const fetcher = getFetchImpl(options?.fetchImpl);
+  const response = await fetcher(`${normalizeBaseUrl(baseUrl)}/api/lobbies`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      campaignId,
+      hostUrl: options?.hostUrl,
+      ttlMinutes: options?.ttlMinutes,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to create lobby invite: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function joinLobbyInvite(baseUrl: string, code: string, playerName: string, fetchImpl?: typeof fetch): Promise<LobbyJoinResponse> {
+  const fetcher = getFetchImpl(fetchImpl);
+  const response = await fetcher(`${normalizeBaseUrl(baseUrl)}/api/lobbies/join`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      code,
+      playerName,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to join lobby invite: ${response.status}`);
+  }
+
+  return response.json();
 }
