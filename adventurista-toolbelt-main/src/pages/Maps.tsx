@@ -5,12 +5,12 @@ import type { MapEntry } from '@/lib/repositories';
 import { useMapCollectionSession } from '@/hooks/useMapSessions';
 import { useMultiplayerSession } from '@/lib/MultiplayerSessionContext';
 import { useCharacterCollectionSession } from '@/hooks/useCharacterSessions';
-import { createLobbyInvite, joinLobbyInvite } from '@/lib/networkCampaignSync';
+import { createLobbyInvite, getLobbyInviteStatus, joinLobbyInvite, type LobbyPlayerStatus } from '@/lib/networkCampaignSync';
 import { Plus, X, Upload, Maximize2, ArrowLeft, Plug, Server } from 'lucide-react';
 
 export default function Maps() {
   const { snapshot, createMap, removeMap, status } = useMapCollectionSession();
-  const { settings, saveSettings, playerName, linkedCharacterId } = useMultiplayerSession();
+  const { settings, saveSettings, playerName, linkedCharacterId, hostedClient } = useMultiplayerSession();
   const { snapshot: characterSnapshot } = useCharacterCollectionSession();
   const { maps } = snapshot;
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
@@ -26,6 +26,7 @@ export default function Maps() {
   const [roomCodeExpiresAt, setRoomCodeExpiresAt] = useState<string | null>(null);
   const [roomCodePending, setRoomCodePending] = useState(false);
   const [roomCodeError, setRoomCodeError] = useState<string | null>(null);
+  const [roomPlayers, setRoomPlayers] = useState<LobbyPlayerStatus[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -108,6 +109,8 @@ export default function Maps() {
       const invite = await createLobbyInvite(hostUrl, campaignId, { hostUrl });
       setRoomCode(invite.code);
       setRoomCodeExpiresAt(invite.expiresAt);
+      const status = await getLobbyInviteStatus(hostUrl, invite.code);
+      setRoomPlayers(status.players);
     } catch (error) {
       setRoomCodeError(error instanceof Error ? error.message : 'Failed to create room code.');
     } finally {
@@ -136,12 +139,63 @@ export default function Maps() {
       setHostUrl(joined.hostUrl);
       setCampaignId(joined.campaignId);
       setRoomCode(joined.code);
+      const status = await getLobbyInviteStatus(joined.hostUrl, joined.code);
+      setRoomPlayers(status.players);
     } catch (error) {
       setRoomCodeError(error instanceof Error ? error.message : 'Failed to join room code.');
     } finally {
       setRoomCodePending(false);
     }
   };
+
+  useEffect(() => {
+    if (!roomCode.trim() || mode !== 'hosted') {
+      setRoomPlayers([]);
+      return;
+    }
+
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const status = await getLobbyInviteStatus(hostUrl, roomCode);
+        if (!cancelled) {
+          setRoomPlayers(status.players);
+          setRoomCodeExpiresAt(status.expiresAt);
+        }
+      } catch {
+        if (!cancelled) {
+          setRoomPlayers([]);
+        }
+      }
+    };
+
+    void refresh();
+    const interval = window.setInterval(() => {
+      void refresh();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [hostUrl, mode, roomCode]);
+
+  useEffect(() => {
+    if (!hostedClient || !roomCode.trim()) return;
+
+    const unsubscribe = hostedClient.subscribeMessages(message => {
+      if (message.type !== 'lobby:player_joined') return;
+      if (message.lobbyCode !== roomCode) return;
+      void getLobbyInviteStatus(hostUrl, roomCode)
+        .then(status => {
+          setRoomPlayers(status.players);
+          setRoomCodeExpiresAt(status.expiresAt);
+        })
+        .catch(() => {});
+    });
+
+    return unsubscribe;
+  }, [hostUrl, hostedClient, roomCode]);
 
   if (activeMap) {
     return (
@@ -297,6 +351,17 @@ export default function Maps() {
             Room code <span className="font-mono text-foreground">{roomCode}</span>
             {roomCodeExpiresAt ? <> · expires {new Date(roomCodeExpiresAt).toLocaleString()}</> : null}
           </p>
+        )}
+
+        {roomPlayers.length > 0 && (
+          <div className="border border-border/60 rounded-sm p-2 space-y-1">
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Lobby Players</p>
+            {roomPlayers.map(player => (
+              <p key={player.sessionId} className="text-xs text-foreground font-mono">
+                {player.playerName} · {new Date(player.joinedAt).toLocaleTimeString()}
+              </p>
+            ))}
+          </div>
         )}
 
         {roomCodeError && (
