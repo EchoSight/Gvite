@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NetworkCampaignClient } from '@/lib/networkCampaignSync';
+import { createLobbyInvite, joinLobbyInvite, NetworkCampaignClient } from '@/lib/networkCampaignSync';
 
 describe('NetworkCampaignClient', () => {
   it('binds fetch implementations so hosted browser fetch calls do not throw illegal invocation', async () => {
@@ -100,6 +100,60 @@ describe('NetworkCampaignClient', () => {
           value: originalWindow,
         });
       }
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('creates and joins room-code lobbies via helper functions', async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: Array<{ url: string; method: string }> = [];
+
+    globalThis.fetch = (async function stubbedFetch(input: RequestInfo | URL, init?: RequestInit) {
+      const url = String(input);
+      calls.push({ url, method: init?.method ?? 'GET' });
+
+      if (url.endsWith('/api/lobbies')) {
+        return new Response(
+          JSON.stringify({
+            code: 'ABCD',
+            campaignId: 'camp-2',
+            hostUrl: 'https://host.example',
+            expiresAt: '2026-03-28T12:00:00.000Z',
+          }),
+          { status: 201, headers: { 'content-type': 'application/json' } },
+        );
+      }
+
+      if (url.endsWith('/api/lobbies/join')) {
+        return new Response(
+          JSON.stringify({
+            code: 'ABCD',
+            campaignId: 'camp-2',
+            hostUrl: 'https://host.example',
+            sessionId: 'sess-123',
+            playerName: 'Aria',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+
+      return new Response('Not found', { status: 404 });
+    }) as typeof fetch;
+
+    try {
+      await expect(createLobbyInvite('https://host.example', 'camp-2')).resolves.toMatchObject({
+        code: 'ABCD',
+        campaignId: 'camp-2',
+      });
+      await expect(joinLobbyInvite('https://host.example', 'ABCD', 'Aria')).resolves.toMatchObject({
+        sessionId: 'sess-123',
+        playerName: 'Aria',
+      });
+      expect(calls).toEqual([
+        { url: 'https://host.example/api/lobbies', method: 'POST' },
+        { url: 'https://host.example/api/lobbies/join', method: 'POST' },
+      ]);
+    } finally {
       globalThis.fetch = originalFetch;
     }
   });

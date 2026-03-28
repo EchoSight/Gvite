@@ -9,6 +9,9 @@ This folder contains the first host-side multiplayer building blocks:
   - `GET /api/campaigns/:campaignId/events?afterVersion=...`
   - `POST /api/campaigns/:campaignId/events`
   - `POST /api/campaigns/:campaignId/assets`
+  - `POST /api/lobbies` (create short room code for a campaign)
+  - `POST /api/lobbies/join` (join campaign via room code + player name)
+  - `GET /api/lobbies/:code` (inspect lobby status)
   - `GET /health`
   - WebSocket upgrades on `/ws?campaignId=<id>`
 
