@@ -5,6 +5,7 @@ import type { MapEntry } from '@/lib/repositories';
 import { useMapCollectionSession } from '@/hooks/useMapSessions';
 import { useMultiplayerSession } from '@/lib/MultiplayerSessionContext';
 import { useCharacterCollectionSession } from '@/hooks/useCharacterSessions';
+import { createLobbyInvite, joinLobbyInvite } from '@/lib/networkCampaignSync';
 import { Plus, X, Upload, Maximize2, ArrowLeft, Plug, Server } from 'lucide-react';
 
 export default function Maps() {
@@ -21,6 +22,10 @@ export default function Maps() {
   const [nextPlayerName, setNextPlayerName] = useState(settings.playerName);
   const [mode, setMode] = useState(settings.mode);
   const [mapActionPending, setMapActionPending] = useState(false);
+  const [roomCode, setRoomCode] = useState('');
+  const [roomCodeExpiresAt, setRoomCodeExpiresAt] = useState<string | null>(null);
+  const [roomCodePending, setRoomCodePending] = useState(false);
+  const [roomCodeError, setRoomCodeError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -94,6 +99,48 @@ export default function Maps() {
       playerName: nextPlayerName,
       linkedCharacterId: settings.linkedCharacterId,
     });
+  };
+
+  const handleCreateRoomCode = async () => {
+    try {
+      setRoomCodePending(true);
+      setRoomCodeError(null);
+      const invite = await createLobbyInvite(hostUrl, campaignId, { hostUrl });
+      setRoomCode(invite.code);
+      setRoomCodeExpiresAt(invite.expiresAt);
+    } catch (error) {
+      setRoomCodeError(error instanceof Error ? error.message : 'Failed to create room code.');
+    } finally {
+      setRoomCodePending(false);
+    }
+  };
+
+  const handleJoinRoomCode = async () => {
+    if (!roomCode.trim()) {
+      setRoomCodeError('Enter a room code first.');
+      return;
+    }
+
+    try {
+      setRoomCodePending(true);
+      setRoomCodeError(null);
+      const joined = await joinLobbyInvite(hostUrl, roomCode.trim().toUpperCase(), nextPlayerName.trim() || 'Player');
+      saveSettings({
+        mode: 'hosted',
+        hostUrl: joined.hostUrl,
+        campaignId: joined.campaignId,
+        playerId: joined.sessionId,
+        playerName: joined.playerName,
+        linkedCharacterId: settings.linkedCharacterId,
+      });
+      setHostUrl(joined.hostUrl);
+      setCampaignId(joined.campaignId);
+      setRoomCode(joined.code);
+    } catch (error) {
+      setRoomCodeError(error instanceof Error ? error.message : 'Failed to join room code.');
+    } finally {
+      setRoomCodePending(false);
+    }
   };
 
   if (activeMap) {
@@ -215,6 +262,46 @@ export default function Maps() {
             SAVE CONNECTION
           </motion.button>
         </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-3 items-end border-t border-border pt-3">
+          <label className="space-y-1">
+            <span className="stat-label block">ROOM CODE</span>
+            <input
+              value={roomCode}
+              onChange={e => setRoomCode(e.target.value.toUpperCase())}
+              maxLength={12}
+              placeholder="ABCD"
+              className="w-full bg-transparent font-mono text-sm text-foreground outline-none border-b border-border pb-1 placeholder:text-muted-foreground/50 tracking-[0.2em]"
+            />
+          </label>
+          <motion.button
+            onClick={() => void handleCreateRoomCode()}
+            disabled={!hostUrl.trim() || !campaignId.trim() || roomCodePending}
+            className="border border-border rounded-sm px-3 py-2 text-[11px] uppercase tracking-widest font-bold hover:bg-foreground hover:text-background transition-colors disabled:opacity-30"
+            whileTap={{ scale: 0.98 }}
+          >
+            Create Room Code
+          </motion.button>
+          <motion.button
+            onClick={() => void handleJoinRoomCode()}
+            disabled={!hostUrl.trim() || !roomCode.trim() || roomCodePending}
+            className="border border-border rounded-sm px-3 py-2 text-[11px] uppercase tracking-widest font-bold hover:bg-foreground hover:text-background transition-colors disabled:opacity-30"
+            whileTap={{ scale: 0.98 }}
+          >
+            Join Code
+          </motion.button>
+        </div>
+
+        {roomCode && (
+          <p className="text-xs text-muted-foreground">
+            Room code <span className="font-mono text-foreground">{roomCode}</span>
+            {roomCodeExpiresAt ? <> · expires {new Date(roomCodeExpiresAt).toLocaleString()}</> : null}
+          </p>
+        )}
+
+        {roomCodeError && (
+          <p className="text-xs text-destructive">{roomCodeError}</p>
+        )}
 
         {status.error && (
           <p className="text-xs text-destructive">{status.error}</p>
