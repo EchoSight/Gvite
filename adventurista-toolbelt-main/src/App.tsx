@@ -13,6 +13,7 @@ import CharacterView from "./pages/CharacterView";
 import Resources from "./pages/Resources";
 import DiceRoller from "./pages/DiceRoller";
 import Maps from "./pages/Maps";
+import JoinSession from "./pages/JoinSession";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -35,6 +36,7 @@ const App = () => (
                   <Route path="/resources" element={<Resources />} />
                   <Route path="/dice" element={<DiceRoller />} />
                   <Route path="/maps" element={<Maps />} />
+                  <Route path="/join" element={<JoinSession />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </main>
