@@ -41,6 +41,9 @@ export default function Maps() {
   const playerJoinUrl = typeof window === 'undefined'
     ? ''
     : `${window.location.origin}${window.location.pathname}#/join?hostUrl=${encodeURIComponent(hostUrl)}&code=${encodeURIComponent(roomCode)}`;
+  const playerJoinQrUrl = playerJoinUrl
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(playerJoinUrl)}`
+    : '';
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -358,6 +361,20 @@ export default function Maps() {
             <p className="text-xs text-muted-foreground break-all">
               Player join URL: <span className="font-mono text-foreground">{playerJoinUrl}</span>
             </p>
+            {playerJoinQrUrl && (
+              <div className="pt-2">
+                <img
+                  src={playerJoinQrUrl}
+                  alt={`QR code for room ${roomCode}`}
+                  width={180}
+                  height={180}
+                  className="border border-border rounded-sm bg-white"
+                />
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-1">
+                  Scan to open player join page
+                </p>
+              </div>
+            )}
           </div>
         )}
 

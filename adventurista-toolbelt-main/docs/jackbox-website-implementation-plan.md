@@ -31,7 +31,7 @@ Make multiplayer feel like Jackbox:
 ### Phase 2: host lobby UX
 
 1. ✅ Add a host-side "Create Join Code" control.
-2. Show QR code + short code in host view.
+2. ✅ Show QR code + short code in host view.
 3. ✅ Render live player list driven by `lobby:player_joined`.
 
 ### Phase 3: controller join route
