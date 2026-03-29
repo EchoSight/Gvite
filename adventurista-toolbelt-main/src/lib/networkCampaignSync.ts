@@ -4,6 +4,7 @@ import type { CampaignSnapshot, StoredAsset } from './campaignState';
 export interface HostConnectionOptions {
   baseUrl: string;
   campaignId: string;
+  sessionId?: string;
   fetchImpl?: typeof fetch;
   webSocketFactory?: (url: string) => WebSocket;
 }
@@ -15,6 +16,7 @@ export interface LobbyCreateResponse {
   campaignId: string;
   hostUrl: string;
   expiresAt: string;
+  hostSessionId: string;
 }
 
 export interface LobbyJoinResponse {
@@ -23,11 +25,13 @@ export interface LobbyJoinResponse {
   hostUrl: string;
   sessionId: string;
   playerName: string;
+  role: 'dm' | 'player';
 }
 
 export interface LobbyPlayerStatus {
   sessionId: string;
   playerName: string;
+  role: 'dm' | 'player';
   joinedAt: string;
 }
 
@@ -145,6 +149,7 @@ export class NetworkCampaignClient {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
+        ...(this.options.sessionId ? { 'x-session-id': this.options.sessionId } : {}),
       },
       body: JSON.stringify(event),
     });

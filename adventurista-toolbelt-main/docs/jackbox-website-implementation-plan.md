@@ -42,7 +42,7 @@ Make multiplayer feel like Jackbox:
 
 ### Phase 4: permissioning hardening
 
-1. Attach session token/id to event POSTs.
+1. ✅ Attach session token/id to event POSTs.
 2. Validate ownership and role server-side per mutation.
 3. Reject unauthorized intents and return structured errors.
 

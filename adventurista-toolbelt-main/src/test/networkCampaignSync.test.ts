@@ -47,6 +47,42 @@ describe('NetworkCampaignClient', () => {
     }
   });
 
+  it('includes x-session-id on event mutation requests when configured', async () => {
+    const originalFetch = globalThis.fetch;
+
+    globalThis.fetch = (async function stubbedFetch(_input: RequestInfo | URL, init?: RequestInit) {
+      expect(init?.method).toBe('POST');
+      const headers = init?.headers as Record<string, string>;
+      expect(headers['x-session-id']).toBe('sess-host');
+      return new Response(
+        JSON.stringify({
+          id: 'evt-1',
+          occurredAt: '2026-03-28T12:00:00.000Z',
+          type: 'character:updated',
+          source: 'local-ui',
+          payload: { character: { id: 'char-1' } },
+        }),
+        { status: 201, headers: { 'content-type': 'application/json' } },
+      );
+    }) as typeof fetch;
+
+    try {
+      const client = new NetworkCampaignClient({
+        baseUrl: 'https://host.example',
+        campaignId: 'camp-1',
+        sessionId: 'sess-host',
+      });
+
+      await expect(client.sendEvent({
+        type: 'character:updated',
+        source: 'local-ui',
+        payload: { character: { id: 'char-1' } } as never,
+      })).resolves.toMatchObject({ id: 'evt-1' });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('rewrites 0.0.0.0 to 127.0.0.1 for browser-hosted requests on the same device', async () => {
     const originalWindow = globalThis.window;
     const originalFetch = globalThis.fetch;
@@ -119,6 +155,7 @@ describe('NetworkCampaignClient', () => {
             campaignId: 'camp-2',
             hostUrl: 'https://host.example',
             expiresAt: '2026-03-28T12:00:00.000Z',
+            hostSessionId: 'sess-dm',
           }),
           { status: 201, headers: { 'content-type': 'application/json' } },
         );
@@ -132,6 +169,7 @@ describe('NetworkCampaignClient', () => {
             hostUrl: 'https://host.example',
             sessionId: 'sess-123',
             playerName: 'Aria',
+            role: 'player',
           }),
           { status: 200, headers: { 'content-type': 'application/json' } },
         );
@@ -145,7 +183,7 @@ describe('NetworkCampaignClient', () => {
             hostUrl: 'https://host.example',
             createdAt: '2026-03-28T11:00:00.000Z',
             expiresAt: '2026-03-28T12:00:00.000Z',
-            players: [{ sessionId: 'sess-123', playerName: 'Aria', joinedAt: '2026-03-28T11:30:00.000Z' }],
+            players: [{ sessionId: 'sess-123', playerName: 'Aria', role: 'player', joinedAt: '2026-03-28T11:30:00.000Z' }],
           }),
           { status: 200, headers: { 'content-type': 'application/json' } },
         );
@@ -158,10 +196,12 @@ describe('NetworkCampaignClient', () => {
       await expect(createLobbyInvite('https://host.example', 'camp-2')).resolves.toMatchObject({
         code: 'ABCD',
         campaignId: 'camp-2',
+        hostSessionId: 'sess-dm',
       });
       await expect(joinLobbyInvite('https://host.example', 'ABCD', 'Aria')).resolves.toMatchObject({
         sessionId: 'sess-123',
         playerName: 'Aria',
+        role: 'player',
       });
       await expect(getLobbyInviteStatus('https://host.example', 'ABCD')).resolves.toMatchObject({
         code: 'ABCD',

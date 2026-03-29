@@ -15,6 +15,8 @@ This folder contains the first host-side multiplayer building blocks:
   - `GET /health`
   - WebSocket upgrades on `/ws?campaignId=<id>`
 
+When a campaign has active lobby sessions, event mutations now require an `x-session-id` header that belongs to the same campaign. DM-only mutation types are rejected for player-role sessions.
+
 The current implementation is deliberately minimal:
 
 - SQLite storage is synchronous and shell-backed so it works without adding native npm dependencies.

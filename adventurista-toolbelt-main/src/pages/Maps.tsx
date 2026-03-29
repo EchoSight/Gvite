@@ -115,6 +115,14 @@ export default function Maps() {
       const invite = await createLobbyInvite(hostUrl, campaignId, { hostUrl });
       setRoomCode(invite.code);
       setRoomCodeExpiresAt(invite.expiresAt);
+      saveSettings({
+        mode: 'hosted',
+        hostUrl,
+        campaignId,
+        playerId: invite.hostSessionId,
+        playerName: nextPlayerName.trim() || settings.playerName,
+        linkedCharacterId: settings.linkedCharacterId,
+      });
       const status = await getLobbyInviteStatus(hostUrl, invite.code);
       setRoomPlayers(status.players);
     } catch (error) {

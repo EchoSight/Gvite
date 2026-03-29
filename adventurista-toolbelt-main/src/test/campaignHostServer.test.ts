@@ -155,6 +155,7 @@ describe('CampaignHostServer', () => {
       hostUrl: `http://127.0.0.1:${port}`,
     });
     expect(createdLobby.code).toMatch(/^[A-Z0-9]{4}$/);
+    expect(createdLobby.hostSessionId).toMatch(/^sess-/);
 
     const joinResponse = await fetch(`http://127.0.0.1:${port}/api/lobbies/join`, {
       method: 'POST',
@@ -172,6 +173,7 @@ describe('CampaignHostServer', () => {
       campaignId: 'camp-jackbox',
       hostUrl: `http://127.0.0.1:${port}`,
       playerName: 'Aria',
+      role: 'player',
     });
     expect(joinedLobby.sessionId).toMatch(/^sess-/);
 
@@ -180,9 +182,46 @@ describe('CampaignHostServer', () => {
     const inspectedLobby = await inspectResponse.json();
     expect(inspectedLobby.players).toEqual([
       expect.objectContaining({
+        role: 'dm',
+      }),
+      expect.objectContaining({
         playerName: 'Aria',
         sessionId: joinedLobby.sessionId,
+        role: 'player',
       }),
     ]);
+
+    const unauthorizedEvent = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-jackbox/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: 'resource:created',
+        source: 'local-ui',
+        payload: { resource: { id: 'res-2' } },
+      }),
+    });
+    expect(unauthorizedEvent.status).toBe(401);
+
+    const playerForbiddenEvent = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-jackbox/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-session-id': joinedLobby.sessionId },
+      body: JSON.stringify({
+        type: 'resource:created',
+        source: 'local-ui',
+        payload: { resource: { id: 'res-3' } },
+      }),
+    });
+    expect(playerForbiddenEvent.status).toBe(403);
+
+    const dmAllowedEvent = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-jackbox/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-session-id': createdLobby.hostSessionId },
+      body: JSON.stringify({
+        type: 'resource:created',
+        source: 'local-ui',
+        payload: { resource: { id: 'res-4' } },
+      }),
+    });
+    expect(dmAllowedEvent.status).toBe(201);
   });
 });
