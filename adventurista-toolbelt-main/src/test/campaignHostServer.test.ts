@@ -128,4 +128,100 @@ describe('CampaignHostServer', () => {
 
     socket.destroy();
   });
+
+  it('creates and joins room-code lobbies for jackbox-style player entry', async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), 'adventurista-host-'));
+    const repository = new SqliteCampaignRepository({ rootDir });
+    const server = new CampaignHostServer({ repository });
+    servers.push(server);
+
+    const { port } = await server.listen();
+    repository.ensureCampaign({ id: 'camp-jackbox', name: 'Arcane Night' });
+
+    const createResponse = await fetch(`http://127.0.0.1:${port}/api/lobbies`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        campaignId: 'camp-jackbox',
+        hostUrl: `http://127.0.0.1:${port}`,
+        ttlMinutes: 30,
+      }),
+    });
+
+    expect(createResponse.status).toBe(201);
+    const createdLobby = await createResponse.json();
+    expect(createdLobby).toMatchObject({
+      campaignId: 'camp-jackbox',
+      hostUrl: `http://127.0.0.1:${port}`,
+    });
+    expect(createdLobby.code).toMatch(/^[A-Z0-9]{4}$/);
+    expect(createdLobby.hostSessionId).toMatch(/^sess-/);
+
+    const joinResponse = await fetch(`http://127.0.0.1:${port}/api/lobbies/join`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        code: createdLobby.code,
+        playerName: 'Aria',
+      }),
+    });
+
+    expect(joinResponse.status).toBe(200);
+    const joinedLobby = await joinResponse.json();
+    expect(joinedLobby).toMatchObject({
+      code: createdLobby.code,
+      campaignId: 'camp-jackbox',
+      hostUrl: `http://127.0.0.1:${port}`,
+      playerName: 'Aria',
+      role: 'player',
+    });
+    expect(joinedLobby.sessionId).toMatch(/^sess-/);
+
+    const inspectResponse = await fetch(`http://127.0.0.1:${port}/api/lobbies/${createdLobby.code}`);
+    expect(inspectResponse.status).toBe(200);
+    const inspectedLobby = await inspectResponse.json();
+    expect(inspectedLobby.players).toEqual([
+      expect.objectContaining({
+        role: 'dm',
+      }),
+      expect.objectContaining({
+        playerName: 'Aria',
+        sessionId: joinedLobby.sessionId,
+        role: 'player',
+      }),
+    ]);
+
+    const unauthorizedEvent = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-jackbox/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: 'resource:created',
+        source: 'local-ui',
+        payload: { resource: { id: 'res-2' } },
+      }),
+    });
+    expect(unauthorizedEvent.status).toBe(401);
+
+    const playerForbiddenEvent = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-jackbox/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-session-id': joinedLobby.sessionId },
+      body: JSON.stringify({
+        type: 'resource:created',
+        source: 'local-ui',
+        payload: { resource: { id: 'res-3' } },
+      }),
+    });
+    expect(playerForbiddenEvent.status).toBe(403);
+
+    const dmAllowedEvent = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-jackbox/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-session-id': createdLobby.hostSessionId },
+      body: JSON.stringify({
+        type: 'resource:created',
+        source: 'local-ui',
+        payload: { resource: { id: 'res-4' } },
+      }),
+    });
+    expect(dmAllowedEvent.status).toBe(201);
+  });
 });

@@ -17,10 +17,11 @@ interface MultiplayerSessionContextValue {
 
 const MultiplayerSessionContext = createContext<MultiplayerSessionContextValue | null>(null);
 
-function createHostedClient(hostUrl: string, campaignId: string) {
+function createHostedClient(hostUrl: string, campaignId: string, sessionId?: string) {
   return new NetworkCampaignClient({
     baseUrl: hostUrl,
     campaignId,
+    sessionId,
     webSocketFactory: url => new WebSocket(url),
   });
 }
@@ -29,8 +30,8 @@ export function MultiplayerSessionProvider({ children }: { children: React.React
   const { settings, saveSettings } = useMultiplayerSettings();
   const hosted = isHostedMultiplayerEnabled(settings);
   const hostedClient = useMemo(
-    () => hosted ? createHostedClient(settings.hostUrl, settings.campaignId) : null,
-    [hosted, settings.hostUrl, settings.campaignId],
+    () => hosted ? createHostedClient(settings.hostUrl, settings.campaignId, settings.playerId || undefined) : null,
+    [hosted, settings.hostUrl, settings.campaignId, settings.playerId],
   );
 
   useEffect(() => {

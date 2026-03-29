@@ -4,11 +4,49 @@ import type { CampaignSnapshot, StoredAsset } from './campaignState';
 export interface HostConnectionOptions {
   baseUrl: string;
   campaignId: string;
+  sessionId?: string;
   fetchImpl?: typeof fetch;
   webSocketFactory?: (url: string) => WebSocket;
 }
 
 export type CampaignEventCallback = (event: CampaignEvent) => void;
+
+export interface LobbyCreateResponse {
+  code: string;
+  campaignId: string;
+  hostUrl: string;
+  expiresAt: string;
+  hostSessionId: string;
+}
+
+export interface LobbyJoinResponse {
+  code: string;
+  campaignId: string;
+  hostUrl: string;
+  sessionId: string;
+  playerName: string;
+  role: 'dm' | 'player';
+}
+
+export interface LobbyPlayerStatus {
+  sessionId: string;
+  playerName: string;
+  role: 'dm' | 'player';
+  joinedAt: string;
+}
+
+export interface LobbyStatusResponse {
+  code: string;
+  campaignId: string;
+  hostUrl: string;
+  createdAt: string;
+  expiresAt: string;
+  players: LobbyPlayerStatus[];
+}
+
+export type HostRealtimeMessage =
+  | { type: 'campaign:event'; event: CampaignEvent }
+  | { type: 'lobby:player_joined'; lobbyCode: string; playerName: string; sessionId: string };
 
 function resolveBrowserSafeBaseUrl(baseUrl: string): string {
   const normalized = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
@@ -36,6 +74,10 @@ function normalizeBaseUrl(baseUrl: string): string {
   return resolveBrowserSafeBaseUrl(baseUrl);
 }
 
+function getFetchImpl(fetchImpl?: typeof fetch): typeof fetch {
+  return (fetchImpl ?? globalThis.fetch).bind(globalThis);
+}
+
 function encodeBase64(bytes: Uint8Array): string {
   if (typeof btoa === 'function') {
     let binary = '';
@@ -60,9 +102,10 @@ export class NetworkCampaignClient {
   private readonly wsFactory?: (url: string) => WebSocket;
   private socket: WebSocket | null = null;
   private readonly listeners = new Set<CampaignEventCallback>();
+  private readonly messageListeners = new Set<(message: HostRealtimeMessage) => void>();
 
   constructor(private readonly options: HostConnectionOptions) {
-    this.fetchImpl = (options.fetchImpl ?? globalThis.fetch).bind(globalThis);
+    this.fetchImpl = getFetchImpl(options.fetchImpl);
     this.wsFactory = options.webSocketFactory;
   }
 
@@ -106,6 +149,7 @@ export class NetworkCampaignClient {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
+        ...(this.options.sessionId ? { 'x-session-id': this.options.sessionId } : {}),
       },
       body: JSON.stringify(event),
     });
@@ -145,9 +189,11 @@ export class NetworkCampaignClient {
     const socket = this.wsFactory(toWebSocketUrl(this.options.baseUrl, this.options.campaignId));
     socket.onmessage = message => {
       if (typeof message.data !== 'string') return;
-      const payload = JSON.parse(message.data) as { type: string; event?: CampaignEvent };
-      if (payload.type !== 'campaign:event' || !payload.event) return;
-      this.listeners.forEach(listener => listener(payload.event!));
+      const payload = JSON.parse(message.data) as HostRealtimeMessage;
+      this.messageListeners.forEach(listener => listener(payload));
+      if (payload.type === 'campaign:event' && payload.event) {
+        this.listeners.forEach(listener => listener(payload.event));
+      }
     };
 
     this.socket = socket;
@@ -164,4 +210,66 @@ export class NetworkCampaignClient {
       this.listeners.delete(listener);
     };
   }
+
+  subscribeMessages(listener: (message: HostRealtimeMessage) => void): () => void {
+    this.messageListeners.add(listener);
+    return () => {
+      this.messageListeners.delete(listener);
+    };
+  }
+}
+
+export async function createLobbyInvite(baseUrl: string, campaignId: string, options?: {
+  hostUrl?: string;
+  ttlMinutes?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<LobbyCreateResponse> {
+  const fetcher = getFetchImpl(options?.fetchImpl);
+  const response = await fetcher(`${normalizeBaseUrl(baseUrl)}/api/lobbies`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      campaignId,
+      hostUrl: options?.hostUrl,
+      ttlMinutes: options?.ttlMinutes,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to create lobby invite: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function joinLobbyInvite(baseUrl: string, code: string, playerName: string, fetchImpl?: typeof fetch): Promise<LobbyJoinResponse> {
+  const fetcher = getFetchImpl(fetchImpl);
+  const response = await fetcher(`${normalizeBaseUrl(baseUrl)}/api/lobbies/join`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      code,
+      playerName,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to join lobby invite: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getLobbyInviteStatus(baseUrl: string, code: string, fetchImpl?: typeof fetch): Promise<LobbyStatusResponse> {
+  const fetcher = getFetchImpl(fetchImpl);
+  const response = await fetcher(`${normalizeBaseUrl(baseUrl)}/api/lobbies/${encodeURIComponent(code)}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch lobby status: ${response.status}`);
+  }
+
+  return response.json();
 }

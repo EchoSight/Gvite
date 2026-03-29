@@ -56,6 +56,7 @@ That command works the same way in macOS/Linux shells and in Windows PowerShell/
 ## Planning docs
 
 - [Desktop multiplayer architecture plan](docs/desktop-multiplayer-architecture.md)
+- [Jackbox-style website implementation plan](docs/jackbox-website-implementation-plan.md)
 - [Multiplayer host scaffolding notes](src/server/README.md)
 - [Phase 2 multiplayer checklist](docs/phase-2-multiplayer-checklist.md)
 

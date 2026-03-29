@@ -32,6 +32,46 @@ interface WebSocketClient {
   socket: Socket;
 }
 
+interface LobbyPlayerSession {
+  sessionId: string;
+  playerName: string;
+  role: 'dm' | 'player';
+  joinedAt: string;
+}
+
+interface LobbyRecord {
+  code: string;
+  campaignId: string;
+  hostUrl: string;
+  createdAt: string;
+  expiresAt: string;
+  sessions: LobbyPlayerSession[];
+}
+
+const lobbyCreateSchema = z.object({
+  campaignId: z.string().min(1),
+  hostUrl: z.string().url().optional(),
+  ttlMinutes: z.number().int().min(1).max(24 * 60).optional(),
+});
+
+const lobbyJoinSchema = z.object({
+  code: z.string().min(4).max(12),
+  playerName: z.string().min(1).max(80),
+  role: z.enum(['dm', 'player']).default('player'),
+});
+
+const LOBBY_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const DEFAULT_LOBBY_TTL_MINUTES = 240;
+const DM_ONLY_EVENT_TYPES = new Set([
+  'role:set',
+  'resource:created',
+  'resource:deleted',
+  'map:created',
+  'map:deleted',
+  'map:obstacles_updated',
+  'map:spell_templates_updated',
+]);
+
 function buildCorsHeaders(origin: string | undefined, allowedOrigins: string[]): Record<string, string> {
   const hasWildcard = allowedOrigins.includes('*');
   if (!origin) {
@@ -129,6 +169,8 @@ export class CampaignHostServer {
   private readonly server = createServer(this.handleRequest.bind(this));
   private readonly clients = new Set<WebSocketClient>();
   private readonly allowedOrigins: string[];
+  private readonly lobbies = new Map<string, LobbyRecord>();
+  private readonly sessionToCampaign = new Map<string, { campaignId: string; role: 'dm' | 'player' }>();
 
   constructor(private readonly options: HostServerOptions) {
     this.allowedOrigins = options.allowedOrigins && options.allowedOrigins.length > 0 ? options.allowedOrigins : ['*'];
@@ -167,6 +209,7 @@ export class CampaignHostServer {
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? '127.0.0.1'}`);
     const corsHeaders = buildCorsHeaders(request.headers.origin, this.allowedOrigins);
     const campaignMatch = url.pathname.match(/^\/api\/campaigns\/([^/]+)(?:\/(snapshot|events|assets))?(?:\/([^/]+))?$/);
+    const lobbyMatch = url.pathname.match(/^\/api\/lobbies(?:\/([A-Za-z0-9]+))?$/);
 
     if (method === 'OPTIONS') {
       response.writeHead(204, {
@@ -181,6 +224,12 @@ export class CampaignHostServer {
 
     if (url.pathname === '/health') {
       textResponse(response, 200, JSON.stringify({ ok: true }), 'application/json', corsHeaders);
+      return;
+    }
+
+    if (lobbyMatch) {
+      this.pruneExpiredLobbies();
+      await this.handleLobbyRequest(method, request, response, lobbyMatch[1], corsHeaders);
       return;
     }
 
@@ -205,7 +254,19 @@ export class CampaignHostServer {
 
       if (method === 'POST' && resource === 'events') {
         const body = await readJsonBody(request);
-        const event = this.options.repository.appendEvent(campaignId, eventSchema.parse(body) as CampaignEventInput);
+        const parsedEvent = eventSchema.parse(body) as CampaignEventInput;
+        const sessionId = request.headers['x-session-id'];
+        const sessionAuth = this.validateEventSession(campaignId, sessionId);
+        if (!sessionAuth.ok) {
+          textResponse(response, sessionAuth.status, JSON.stringify({ error: sessionAuth.error }), 'application/json', corsHeaders);
+          return;
+        }
+        if (sessionAuth.role === 'player' && DM_ONLY_EVENT_TYPES.has(parsedEvent.type)) {
+          textResponse(response, 403, JSON.stringify({ error: `Event type "${parsedEvent.type}" requires a DM session.` }), 'application/json', corsHeaders);
+          return;
+        }
+
+        const event = this.options.repository.appendEvent(campaignId, parsedEvent);
         this.broadcast(campaignId, JSON.stringify({ type: 'campaign:event', event }));
         textResponse(response, 201, JSON.stringify(event), 'application/json', corsHeaders);
         return;
@@ -240,6 +301,191 @@ export class CampaignHostServer {
     } catch (error) {
       textResponse(response, 400, JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), 'application/json', corsHeaders);
     }
+  }
+
+  private async handleLobbyRequest(
+    method: string,
+    request: IncomingMessage,
+    response: ServerResponse,
+    lobbyCode: string | undefined,
+    corsHeaders: Record<string, string>,
+  ): Promise<void> {
+    try {
+      if (method === 'POST' && !lobbyCode) {
+        const body = lobbyCreateSchema.parse(await readJsonBody(request));
+        const campaignId = body.campaignId.trim();
+        const lobby = this.createLobby({
+          campaignId,
+          hostUrl: body.hostUrl ? body.hostUrl.trim() : this.getDefaultHostUrl(request),
+          ttlMinutes: body.ttlMinutes ?? DEFAULT_LOBBY_TTL_MINUTES,
+        });
+        const dmSession = this.createSession(lobby, 'Dungeon Master', 'dm');
+        textResponse(response, 201, JSON.stringify({
+          code: lobby.code,
+          campaignId: lobby.campaignId,
+          hostUrl: lobby.hostUrl,
+          expiresAt: lobby.expiresAt,
+          hostSessionId: dmSession.sessionId,
+        }), 'application/json', corsHeaders);
+        return;
+      }
+
+      if (method === 'POST' && lobbyCode?.toUpperCase() === 'JOIN') {
+        const body = lobbyJoinSchema.parse(await readJsonBody(request));
+        const joined = this.joinLobby(body.code.toUpperCase(), body.playerName.trim(), body.role);
+        if (!joined) {
+          textResponse(response, 404, JSON.stringify({ error: 'Lobby not found or expired.' }), 'application/json', corsHeaders);
+          return;
+        }
+
+        textResponse(response, 200, JSON.stringify(joined), 'application/json', corsHeaders);
+        return;
+      }
+
+      if (method === 'GET' && lobbyCode) {
+        const lobby = this.lobbies.get(lobbyCode.toUpperCase());
+        if (!lobby) {
+          textResponse(response, 404, JSON.stringify({ error: 'Lobby not found or expired.' }), 'application/json', corsHeaders);
+          return;
+        }
+
+        textResponse(response, 200, JSON.stringify({
+          code: lobby.code,
+          campaignId: lobby.campaignId,
+          hostUrl: lobby.hostUrl,
+          createdAt: lobby.createdAt,
+          expiresAt: lobby.expiresAt,
+          players: lobby.sessions.map(session => ({
+            sessionId: session.sessionId,
+            playerName: session.playerName,
+            role: session.role,
+            joinedAt: session.joinedAt,
+          })),
+        }), 'application/json', corsHeaders);
+        return;
+      }
+
+      textResponse(response, 405, 'Method not allowed', 'text/plain', corsHeaders);
+    } catch (error) {
+      textResponse(response, 400, JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), 'application/json', corsHeaders);
+    }
+  }
+
+  private createLobby(options: { campaignId: string; hostUrl: string; ttlMinutes: number }): LobbyRecord {
+    const now = Date.now();
+    const expiresAt = new Date(now + (options.ttlMinutes * 60_000)).toISOString();
+    const code = this.generateUniqueLobbyCode();
+    const lobby: LobbyRecord = {
+      code,
+      campaignId: options.campaignId,
+      hostUrl: options.hostUrl,
+      createdAt: new Date(now).toISOString(),
+      expiresAt,
+      sessions: [],
+    };
+    this.lobbies.set(code, lobby);
+    return lobby;
+  }
+
+  private joinLobby(code: string, playerName: string, role: 'dm' | 'player'): { code: string; campaignId: string; hostUrl: string; sessionId: string; playerName: string; role: 'dm' | 'player' } | null {
+    const lobby = this.lobbies.get(code);
+    if (!lobby) return null;
+    if (new Date(lobby.expiresAt).getTime() <= Date.now()) {
+      this.lobbies.delete(code);
+      return null;
+    }
+
+    const session = this.createSession(lobby, playerName, role);
+
+    this.broadcast(lobby.campaignId, JSON.stringify({
+      type: 'lobby:player_joined',
+      lobbyCode: lobby.code,
+      playerName,
+      sessionId: session.sessionId,
+    }));
+
+    return {
+      code: lobby.code,
+      campaignId: lobby.campaignId,
+      hostUrl: lobby.hostUrl,
+      sessionId: session.sessionId,
+      playerName,
+      role: session.role,
+    };
+  }
+
+  private createSession(lobby: LobbyRecord, playerName: string, role: 'dm' | 'player'): LobbyPlayerSession {
+    const sessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const session: LobbyPlayerSession = {
+      sessionId,
+      playerName,
+      role,
+      joinedAt: new Date().toISOString(),
+    };
+    lobby.sessions.push(session);
+    this.sessionToCampaign.set(sessionId, { campaignId: lobby.campaignId, role });
+    return session;
+  }
+
+  private generateUniqueLobbyCode(): string {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const candidate = this.generateLobbyCode();
+      if (!this.lobbies.has(candidate)) {
+        return candidate;
+      }
+    }
+
+    throw new Error('Unable to generate a unique lobby code. Please retry.');
+  }
+
+  private generateLobbyCode(length = 4): string {
+    let code = '';
+    for (let index = 0; index < length; index += 1) {
+      const charIndex = Math.floor(Math.random() * LOBBY_CODE_ALPHABET.length);
+      code += LOBBY_CODE_ALPHABET[charIndex];
+    }
+    return code;
+  }
+
+  private pruneExpiredLobbies(): void {
+    const now = Date.now();
+    this.lobbies.forEach((lobby, code) => {
+      if (new Date(lobby.expiresAt).getTime() <= now) {
+        lobby.sessions.forEach(session => this.sessionToCampaign.delete(session.sessionId));
+        this.lobbies.delete(code);
+      }
+    });
+  }
+
+  private validateEventSession(
+    campaignId: string,
+    sessionIdHeader: string | string[] | undefined,
+  ): { ok: true; role: 'dm' | 'player' | 'local' } | { ok: false; status: number; error: string } {
+    const hasSessionBoundCampaign = [...this.sessionToCampaign.values()].some(session => session.campaignId === campaignId);
+    const normalizedSessionId = typeof sessionIdHeader === 'string' ? sessionIdHeader.trim() : '';
+
+    if (!normalizedSessionId) {
+      if (hasSessionBoundCampaign) {
+        return { ok: false, status: 401, error: 'Missing x-session-id header for hosted campaign mutation.' };
+      }
+      return { ok: true, role: 'local' };
+    }
+
+    const session = this.sessionToCampaign.get(normalizedSessionId);
+    if (!session || session.campaignId !== campaignId) {
+      return { ok: false, status: 403, error: 'Invalid session for campaign mutation.' };
+    }
+
+    return { ok: true, role: session.role };
+  }
+
+  private getDefaultHostUrl(request: IncomingMessage): string {
+    const host = request.headers.host ?? '127.0.0.1:8787';
+    const forwardedProto = request.headers['x-forwarded-proto'];
+    const protocol = typeof forwardedProto === 'string' && forwardedProto.length > 0
+      ? forwardedProto.split(',')[0].trim()
+      : 'http';
+    return `${protocol}://${host}`;
   }
 
   private handleUpgrade(request: IncomingMessage, socket: Socket): void {
