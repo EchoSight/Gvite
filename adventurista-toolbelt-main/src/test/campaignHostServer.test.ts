@@ -223,5 +223,116 @@ describe('CampaignHostServer', () => {
       }),
     });
     expect(dmAllowedEvent.status).toBe(201);
+
+    const dmCreateMap = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-jackbox/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-session-id': createdLobby.hostSessionId },
+      body: JSON.stringify({
+        type: 'map:created',
+        source: 'local-ui',
+        payload: {
+          map: {
+            id: 'map-1',
+            name: 'Town Square',
+            image: 'data:image/png;base64,AAA=',
+            createdAt: '2026-03-20T00:00:00.000Z',
+          },
+        },
+      }),
+    });
+    expect(dmCreateMap.status).toBe(201);
+
+    const dmSeedToken = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-jackbox/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-session-id': createdLobby.hostSessionId },
+      body: JSON.stringify({
+        type: 'map:tokens_updated',
+        source: 'local-ui',
+        payload: {
+          mapId: 'map-1',
+          tokens: [{
+            id: 'token-1',
+            label: 'Aria',
+            x: 10,
+            y: 20,
+            color: '#ffffff',
+            type: 'character',
+            ownerPlayerId: joinedLobby.sessionId,
+          }],
+        },
+      }),
+    });
+    expect(dmSeedToken.status).toBe(201);
+
+    const playerBroadTokenUpdate = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-jackbox/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-session-id': joinedLobby.sessionId },
+      body: JSON.stringify({
+        type: 'map:tokens_updated',
+        source: 'local-ui',
+        payload: { mapId: 'map-1', tokens: [] },
+      }),
+    });
+    expect(playerBroadTokenUpdate.status).toBe(403);
+
+    const playerMoveIntent = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-jackbox/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-session-id': joinedLobby.sessionId },
+      body: JSON.stringify({
+        type: 'map:token_move_intent',
+        source: 'local-ui',
+        payload: { mapId: 'map-1', tokenId: 'token-1', x: 42, y: 84 },
+      }),
+    });
+    expect(playerMoveIntent.status).toBe(201);
+
+    const postMoveSnapshot = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-jackbox/snapshot`).then(response => response.json());
+    expect(postMoveSnapshot.mapStates['map-1'].tokens).toEqual([
+      expect.objectContaining({
+        id: 'token-1',
+        x: 42,
+        y: 84,
+      }),
+    ]);
+
+    const dmSeedUnownedMonster = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-jackbox/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-session-id': createdLobby.hostSessionId },
+      body: JSON.stringify({
+        type: 'map:tokens_updated',
+        source: 'local-ui',
+        payload: {
+          mapId: 'map-1',
+          tokens: [{
+            id: 'token-1',
+            label: 'Aria',
+            x: 42,
+            y: 84,
+            color: '#ffffff',
+            type: 'character',
+            ownerPlayerId: joinedLobby.sessionId,
+          }, {
+            id: 'token-2',
+            label: 'Goblin',
+            x: 50,
+            y: 60,
+            color: '#00ff00',
+            type: 'monster',
+          }],
+        },
+      }),
+    });
+    expect(dmSeedUnownedMonster.status).toBe(201);
+
+    const playerMoveMonsterIntent = await fetch(`http://127.0.0.1:${port}/api/campaigns/camp-jackbox/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-session-id': joinedLobby.sessionId },
+      body: JSON.stringify({
+        type: 'map:token_move_intent',
+        source: 'local-ui',
+        payload: { mapId: 'map-1', tokenId: 'token-2', x: 100, y: 100 },
+      }),
+    });
+    expect(playerMoveMonsterIntent.status).toBe(403);
   });
 });

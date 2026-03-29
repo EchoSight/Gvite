@@ -138,11 +138,13 @@ describe('map sessions', () => {
       { type: 'map:token_move', tokenId: 'token-1', x: 120, y: 140 },
     );
     expect(derivedEvent).toEqual({
-      type: 'map:tokens_updated',
+      type: 'map:token_move_intent',
       source: 'local-ui',
       payload: {
         mapId: 'map-1',
-        tokens: [expect.objectContaining({ id: 'token-1', x: 120, y: 140 })],
+        tokenId: 'token-1',
+        x: 120,
+        y: 140,
       },
     });
   });

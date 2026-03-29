@@ -82,16 +82,16 @@ export function resolveMapIntent(snapshot: MapSnapshot, intent: MapIntent): Camp
       return { type: 'map:tokens_updated', source: 'local-ui', payload: { mapId: snapshot.mapId, tokens: intent.tokens } };
     case 'map:token_move':
       return {
-        type: 'map:tokens_updated',
+        type: 'map:token_move_intent',
         source: 'local-ui',
-        payload: { mapId: snapshot.mapId, tokens: buildMovedTokenSnapshot(snapshot, intent.tokenId, intent.x, intent.y) },
+        payload: { mapId: snapshot.mapId, tokenId: intent.tokenId, x: intent.x, y: intent.y },
       };
     case 'map:token_move_cell': {
       const nextPosition = getCellCenter(intent.cell, snapshot.gridSettings);
       return {
-        type: 'map:tokens_updated',
+        type: 'map:token_move_intent',
         source: 'local-ui',
-        payload: { mapId: snapshot.mapId, tokens: buildMovedTokenSnapshot(snapshot, intent.tokenId, nextPosition.x, nextPosition.y) },
+        payload: { mapId: snapshot.mapId, tokenId: intent.tokenId, x: nextPosition.x, y: nextPosition.y },
       };
     }
     case 'map:token_damage':
@@ -275,6 +275,11 @@ export class MapSession {
       case 'map:tokens_updated':
         replaceMapTokens(this.mapId, event.payload.tokens, this.options);
         return;
+      case 'map:token_move_intent': {
+        const movedTokens = buildMovedTokenSnapshot(this.getSnapshot(), event.payload.tokenId, event.payload.x, event.payload.y);
+        replaceMapTokens(this.mapId, movedTokens, this.options);
+        return;
+      }
       case 'map:grid_updated':
         saveMapGridSettings(this.mapId, event.payload.gridSettings, this.options);
         return;

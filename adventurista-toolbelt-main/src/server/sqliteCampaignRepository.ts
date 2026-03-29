@@ -350,6 +350,10 @@ export class SqliteCampaignRepository implements CampaignRepository {
         this.updateMapStateField(campaignId, event.payload.mapId, 'tokens_json', event.payload.tokens);
         return;
       }
+      case 'map:token_move_intent': {
+        this.moveMapToken(campaignId, event.payload.mapId, event.payload.tokenId, event.payload.x, event.payload.y);
+        return;
+      }
       case 'map:grid_updated': {
         this.updateMapStateField(campaignId, event.payload.mapId, 'grid_json', event.payload.gridSettings);
         return;
@@ -386,5 +390,17 @@ export class SqliteCampaignRepository implements CampaignRepository {
       VALUES (${sql(campaignId)}, ${sql(mapId)}, ${sql(value)})
       ON CONFLICT(campaign_id, map_id) DO UPDATE SET ${column} = excluded.${column};
     `);
+  }
+
+  private moveMapToken(campaignId: string, mapId: string, tokenId: string, x: number, y: number): void {
+    const row = this.db.query<{ tokens_json: string | null }>(`
+      SELECT tokens_json
+      FROM map_states
+      WHERE campaign_id = ${sql(campaignId)} AND map_id = ${sql(mapId)}
+      LIMIT 1;
+    `)[0];
+    const currentTokens = row?.tokens_json ? parseJson<MapToken[]>(row.tokens_json) : [];
+    const updatedTokens = currentTokens.map(token => token.id === tokenId ? { ...token, x, y } : token);
+    this.updateMapStateField(campaignId, mapId, 'tokens_json', updatedTokens);
   }
 }

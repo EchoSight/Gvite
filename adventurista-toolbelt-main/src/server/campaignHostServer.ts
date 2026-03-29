@@ -60,6 +60,13 @@ const lobbyJoinSchema = z.object({
   role: z.enum(['dm', 'player']).default('player'),
 });
 
+const tokenMoveIntentSchema = z.object({
+  mapId: z.string().min(1),
+  tokenId: z.string().min(1),
+  x: z.number().finite(),
+  y: z.number().finite(),
+});
+
 const LOBBY_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const DEFAULT_LOBBY_TTL_MINUTES = 240;
 const DM_ONLY_EVENT_TYPES = new Set([
@@ -263,6 +270,11 @@ export class CampaignHostServer {
         }
         if (sessionAuth.role === 'player' && DM_ONLY_EVENT_TYPES.has(parsedEvent.type)) {
           textResponse(response, 403, JSON.stringify({ error: `Event type "${parsedEvent.type}" requires a DM session.` }), 'application/json', corsHeaders);
+          return;
+        }
+        const authzError = this.authorizePlayerEvent(campaignId, sessionAuth.role, typeof sessionId === 'string' ? sessionId : '', parsedEvent);
+        if (authzError) {
+          textResponse(response, authzError.status, JSON.stringify({ error: authzError.error }), 'application/json', corsHeaders);
           return;
         }
 
@@ -477,6 +489,40 @@ export class CampaignHostServer {
     }
 
     return { ok: true, role: session.role };
+  }
+
+  private authorizePlayerEvent(
+    campaignId: string,
+    role: 'dm' | 'player' | 'local',
+    sessionId: string,
+    event: CampaignEventInput,
+  ): { status: number; error: string } | null {
+    if (role !== 'player') return null;
+
+    if (event.type === 'map:tokens_updated') {
+      return { status: 403, error: 'Players must use map:token_move_intent instead of broad map:tokens_updated mutations.' };
+    }
+
+    if (event.type !== 'map:token_move_intent') {
+      return null;
+    }
+
+    const intent = tokenMoveIntentSchema.parse(event.payload);
+    const snapshot = this.options.repository.getSnapshot(campaignId);
+    const token = snapshot.mapStates[intent.mapId]?.tokens.find(candidate => candidate.id === intent.tokenId);
+    if (!token) {
+      return { status: 404, error: `Token "${intent.tokenId}" was not found on map "${intent.mapId}".` };
+    }
+
+    if (token.type !== 'character') {
+      return { status: 403, error: 'Players can only move character tokens they control.' };
+    }
+
+    if (!token.ownerPlayerId || token.ownerPlayerId !== sessionId) {
+      return { status: 403, error: 'Players can only move character tokens they control.' };
+    }
+
+    return null;
   }
 
   private getDefaultHostUrl(request: IncomingMessage): string {

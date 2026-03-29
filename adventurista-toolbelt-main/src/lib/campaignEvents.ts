@@ -23,6 +23,7 @@ export type CampaignEvent =
   | CampaignEventBase<'map:created', { map: MapEntry }>
   | CampaignEventBase<'map:deleted', { mapId: string }>
   | CampaignEventBase<'map:tokens_updated', { mapId: string; tokens: MapToken[] }>
+  | CampaignEventBase<'map:token_move_intent', { mapId: string; tokenId: string; x: number; y: number }>
   | CampaignEventBase<'map:grid_updated', { mapId: string; gridSettings: GridSettings }>
   | CampaignEventBase<'map:obstacles_updated', { mapId: string; obstacles: Obstacle[] }>
   | CampaignEventBase<'map:spell_templates_updated', { mapId: string; spellTemplates: SpellTemplate[] }>;
