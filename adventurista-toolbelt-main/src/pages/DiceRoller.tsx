@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DICE, RollResult, rollExpression, quickRoll } from '@/lib/dice';
 import { Dices, RotateCcw, ChevronUp, ChevronDown } from 'lucide-react';
@@ -9,6 +9,27 @@ export default function DiceRoller() {
   const [advMode, setAdvMode] = useState<'normal' | 'advantage' | 'disadvantage'>('normal');
   const [lastRoll, setLastRoll] = useState<RollResult | null>(null);
   const [rolling, setRolling] = useState(false);
+
+  const [rollingPreview, setRollingPreview] = useState<number[]>([]);
+
+  useEffect(() => {
+    if (!rolling) {
+      setRollingPreview([]);
+      return;
+    }
+
+    const parseSides = (expr: string): number => {
+      const match = expr.toLowerCase().match(/\d*d(\d+)/);
+      return match ? Number(match[1]) : 20;
+    };
+
+    const sides = lastRoll?.rolls[0]?.die ?? parseSides(expression);
+    const tick = () => setRollingPreview(Array.from({ length: 3 }, () => Math.floor(Math.random() * sides) + 1));
+
+    tick();
+    const interval = setInterval(tick, 80);
+    return () => clearInterval(interval);
+  }, [expression, lastRoll, rolling]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const doRoll = (expr?: string) => {
@@ -116,7 +137,34 @@ export default function DiceRoller() {
 
       {/* Last result */}
       <AnimatePresence mode="wait">
-        {lastRoll && (
+        {rolling && (
+          <motion.section
+            key="rolling"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="mb-6"
+          >
+            <p className="tactical-header mb-3">ROLLING...</p>
+            <div className="tactical-card py-6 md:py-8">
+              <div className="flex justify-center gap-2">
+                {rollingPreview.map((value, index) => (
+                  <motion.div
+                    key={`${index}-${value}`}
+                    className="w-14 h-14 md:w-16 md:h-16 rounded-md border border-border/70 flex items-center justify-center font-mono text-2xl"
+                    initial={{ rotate: -25, scale: 0.85, opacity: 0.4 }}
+                    animate={{ rotate: 0, scale: [0.85, 1.08, 1], opacity: 1 }}
+                    transition={{ duration: 0.18, ease: 'easeOut' }}
+                  >
+                    {value}
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          </motion.section>
+        )}
+
+        {!rolling && lastRoll && (
           <motion.section
             key={lastRoll.id}
             initial={{ opacity: 0, scale: 0.9 }}
