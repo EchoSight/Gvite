@@ -47,6 +47,35 @@ describe('NetworkCampaignClient', () => {
     }
   });
 
+
+  it('surfaces a clear error for HTTPS pages targeting HTTP host URLs', async () => {
+    const originalWindow = globalThis.window;
+
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: { location: { protocol: 'https:', hostname: 'echosight.github.io' } },
+    });
+
+    try {
+      const client = new NetworkCampaignClient({
+        baseUrl: 'http://192.168.0.136:8787',
+        campaignId: 'camp-1',
+      });
+
+      await expect(client.fetchSnapshot()).rejects.toThrow(/HTTPS.*HTTP/i);
+    } finally {
+      if (originalWindow === undefined) {
+        // @ts-expect-error test cleanup for optional global
+        delete globalThis.window;
+      } else {
+        Object.defineProperty(globalThis, 'window', {
+          configurable: true,
+          value: originalWindow,
+        });
+      }
+    }
+  });
+
   it('includes x-session-id on event mutation requests when configured', async () => {
     const originalFetch = globalThis.fetch;
 
