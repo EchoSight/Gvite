@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { networkInterfaces } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import process from 'node:process';
+import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 const rawMode = process.argv[2] ?? 'local';
@@ -46,6 +47,40 @@ function ensureSqliteCliAvailable() {
 
 function printHelp() {
   console.log(`Adventurista local stack helper\n\nUsage:\n  node scripts/serve-stack.mjs [local|lan|host|dm]\n\nModes:\n  local  Start the Vite app and multiplayer host for same-machine testing.\n  lan    Start the Vite app and multiplayer host with LAN-friendly host binding.\n  host   Start only the multiplayer host.\n  dm     Start a LAN-ready multiplayer host, open the published app in your browser, and print share links for players.\n\nExamples:\n  npm run stack\n  npm run stack:dm\n  node scripts/serve-stack.mjs\n  node scripts/serve-stack.mjs lan\n`);
+}
+
+
+async function isPortAvailable(port, host) {
+  return await new Promise((resolvePort) => {
+    const server = net.createServer();
+    server.unref();
+    server.on('error', () => resolvePort(false));
+    server.listen({ port, host }, () => {
+      server.close(() => resolvePort(true));
+    });
+  });
+}
+
+async function findAvailablePort(startPort, hosts = ['127.0.0.1'], attempts = 20) {
+  for (let offset = 0; offset <= attempts; offset += 1) {
+    const candidate = startPort + offset;
+    let allAvailable = true;
+
+    for (const host of hosts) {
+      // eslint-disable-next-line no-await-in-loop
+      const available = await isPortAvailable(candidate, host);
+      if (!available) {
+        allAvailable = false;
+        break;
+      }
+    }
+
+    if (allAvailable) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 function parsePort(value, fallback = 8787) {
@@ -195,12 +230,29 @@ if (mode === 'local' || mode === 'lan') {
 }
 
 const defaultHost = mode === 'lan' || mode === 'dm' ? '0.0.0.0' : undefined;
-const hostEnv = defaultHost ? { HOST: process.env.HOST ?? defaultHost } : {};
+const requestedHost = process.env.HOST ?? defaultHost ?? '127.0.0.1';
+const requestedPort = parsePort(process.env.PORT, 8787);
+const hostsForPortCheck = isWildcardHost(requestedHost) ? ['0.0.0.0', '::'] : [requestedHost];
+const resolvedPort = await findAvailablePort(requestedPort, hostsForPortCheck);
+
+if (resolvedPort === null) {
+  console.error(`[serve-stack] Could not find an available host port starting at ${requestedPort}.`);
+  console.error('[serve-stack] Set PORT to a free value and retry (example: PORT=8790 npm run stack:lan).');
+  shutdown(1);
+}
+
+if (resolvedPort !== requestedPort) {
+  console.warn(`[serve-stack] Port ${requestedPort} is in use. Falling back to ${resolvedPort} for multiplayer host.`);
+}
+
+const hostEnv = {
+  ...(defaultHost ? { HOST: requestedHost } : {}),
+  PORT: String(resolvedPort),
+};
 startProcess('multiplayer host', nodeExecutable, [viteNodeCli, '--config', 'vite.config.ts', '--script', 'src/server/devHost.ts'], hostEnv);
 
 if (mode === 'dm') {
-  const resolvedHost = hostEnv.HOST ?? process.env.HOST ?? '127.0.0.1';
-  const resolvedPort = parsePort(process.env.PORT, 8787);
+  const resolvedHost = requestedHost;
   const campaignId = (process.env.CAMPAIGN_ID ?? 'campaign-dev').trim();
   const dmName = (process.env.DM_PLAYER_NAME ?? 'Dungeon Master').trim();
   const lanUrls = getLanUrls(resolvedHost, resolvedPort);
