@@ -62,6 +62,13 @@ function resolveBrowserSafeBaseUrl(baseUrl: string): string {
     return normalized;
   }
 
+  const pageProtocol = window.location?.protocol;
+  if (pageProtocol === 'https:' && parsed.protocol === 'http:') {
+    throw new Error(
+      'Hosted connection blocked: this page is running over HTTPS but Host URL is HTTP. Use an HTTPS host URL or open the app from a local HTTP URL (for example http://localhost:8081).',
+    );
+  }
+
   if (parsed.hostname === '0.0.0.0') {
     parsed.hostname = '127.0.0.1';
     return parsed.toString().replace(/\/$/, '');

@@ -37,6 +37,8 @@ That command works the same way in macOS/Linux shells and in Windows PowerShell/
 - `npm run stack:lan` - start the Vite app plus a LAN-shareable multiplayer host
 - `npm run stack:dm` - start a LAN-shareable multiplayer host, open the published app for the DM, and print player invite links
 - `npm run stack:host` - start only the local multiplayer host helper
+- `npm run electron:dev` - launch the app in an Electron desktop shell (requires `electron` to be installed, e.g. `npm i -D electron`)
+- `npm run electron:start` - launch Electron using `ELECTRON_RENDERER_URL` (or defaults to `http://127.0.0.1:8080`)
 - `npm run build` - create a production build
 - `npm run build:pages` - create a GitHub Pages-friendly static build
 - `npm run preview` - preview the production build locally
@@ -73,6 +75,24 @@ Run the node-focused checks with:
 
 ```sh
 npm run test:node
+```
+
+## Desktop shell (Electron)
+
+A starter Electron wrapper now lives in `electron/main.mjs` + `electron/preload.mjs`.
+
+To run the desktop shell against the local Vite frontend:
+
+```sh
+npm run electron:dev
+```
+
+This helper script starts Vite on `127.0.0.1:8080`, waits for it to become reachable, then launches Electron with `ELECTRON_RENDERER_URL` pointing to that dev server.
+
+If Electron is not installed yet, add it first:
+
+```sh
+npm i -D electron
 ```
 
 ## Running the development multiplayer host
