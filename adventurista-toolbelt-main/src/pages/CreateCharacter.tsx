@@ -13,6 +13,7 @@ import { StatBlock } from '@/components/StatBlock';
 import { EquipmentDrawer } from '@/components/EquipmentDrawer';
 import { EquipmentRow } from '@/components/EquipmentRow';
 import { Plus } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 const HALF_ELF_ABILITY_OPTIONS = ABILITY_NAMES.filter(name => name !== 'CHA');
 
@@ -30,6 +31,7 @@ export default function CreateCharacter() {
   const [halfElfChoices, setHalfElfChoices] = useState<AbilityName[]>(['STR', 'DEX']);
   const [equipment, setEquipment] = useState<EquipmentItem[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
 
   const raceProfile = getRaceProfile(race);
 
@@ -75,25 +77,37 @@ export default function CreateCharacter() {
   });
 
   const handleCreate = async () => {
-    if (!name.trim()) return;
-    const char = normalizeCharacterSpellcasting({
-      id: `char-${Date.now()}`,
-      name: name.trim(),
-      race,
-      class: dndClass,
-      level,
-      xp: 0,
-      hp: Math.max(1, maxHp),
-      maxHp: Math.max(1, maxHp),
-      ac: baseAc,
-      speed: 30,
-      abilities: finalAbilities,
-      equipment,
-      createdAt: new Date().toISOString(),
-      spellcasting: createSpellcastingState(dndClass, level),
-    } satisfies Character);
-    await createCharacter(char);
-    navigate(`/character/${char.id}`);
+    if (!name.trim() || isCreating) return;
+
+    setIsCreating(true);
+    try {
+      const char = normalizeCharacterSpellcasting({
+        id: `char-${Date.now()}`,
+        name: name.trim(),
+        race,
+        class: dndClass,
+        level,
+        xp: 0,
+        hp: Math.max(1, maxHp),
+        maxHp: Math.max(1, maxHp),
+        ac: baseAc,
+        speed: 30,
+        abilities: finalAbilities,
+        equipment,
+        createdAt: new Date().toISOString(),
+        spellcasting: createSpellcastingState(dndClass, level),
+      } satisfies Character);
+      await createCharacter(char);
+      navigate(`/character/${char.id}`);
+    } catch (error) {
+      toast({
+        title: 'Unable to finalize build',
+        description: error instanceof Error ? error.message : 'Unknown error while creating character.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const updateAbility = (name: AbilityName, score: number) => {
@@ -274,11 +288,11 @@ export default function CreateCharacter() {
       {/* Create */}
       <motion.button
         onClick={handleCreate}
-        disabled={!name.trim()}
+        disabled={!name.trim() || isCreating}
         className="w-full tactical-card text-center font-display text-sm tracking-widest uppercase border-foreground/20 hover:bg-foreground hover:text-background transition-colors disabled:opacity-30 disabled:cursor-not-allowed py-3"
         whileTap={{ scale: 0.98 }}
       >
-        FINALIZE BUILD
+        {isCreating ? 'FINALIZING…' : 'FINALIZE BUILD'}
       </motion.button>
 
       <EquipmentDrawer
