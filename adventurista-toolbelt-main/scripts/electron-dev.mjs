@@ -1,16 +1,16 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const host = process.env.ELECTRON_DEV_HOST || '127.0.0.1';
 const port = Number(process.env.ELECTRON_DEV_PORT || 8080);
 const url = `http://${host}:${port}`;
 
-const isWin = process.platform === 'win32';
-const npmCmd = isWin ? 'npm.cmd' : 'npm';
-const electronCmd = isWin ? 'npx.cmd' : 'npx';
-
 const children = [];
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const viteCliPath = join(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js');
+const electronCliPath = join(projectRoot, 'node_modules', 'electron', 'cli.js');
 
 function terminateChildren(exitCode = 0) {
   for (const child of children) {
@@ -43,7 +43,15 @@ async function waitForServer(maxAttempts = 120) {
 }
 
 async function main() {
-  const vite = spawn(npmCmd, ['run', 'dev', '--', '--host', host, '--port', String(port)], {
+  if (!existsSync(viteCliPath)) {
+    throw new Error('Vite CLI not found. Run "npm install" before starting electron:dev.');
+  }
+  if (!existsSync(electronCliPath)) {
+    throw new Error('Electron CLI not found. Install it first with "npm i -D electron".');
+  }
+
+  const vite = spawn(process.execPath, [viteCliPath, '--host', host, '--port', String(port)], {
+    cwd: projectRoot,
     stdio: 'inherit',
     env: process.env,
   });
@@ -67,7 +75,7 @@ async function main() {
     ELECTRON_RENDERER_URL: url,
   };
 
-  const electron = spawn(electronCmd, ['electron', '.'], {
+  const electron = spawn(process.execPath, [electronCliPath, '.'], {
     cwd: projectRoot,
     stdio: 'inherit',
     env: electronEnv,
