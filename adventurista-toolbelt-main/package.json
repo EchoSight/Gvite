@@ -18,7 +18,9 @@
     "stack": "node scripts/serve-stack.mjs",
     "stack:lan": "node scripts/serve-stack.mjs lan",
     "stack:dm": "node scripts/serve-stack.mjs dm",
-    "stack:host": "node scripts/serve-stack.mjs host"
+    "stack:host": "node scripts/serve-stack.mjs host",
+    "electron:start": "electron .",
+    "electron:dev": "node scripts/electron-dev.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -95,5 +97,6 @@
     "vite": "^5.4.21",
     "vitest": "^3.2.4"
   },
-  "description": "Adventurista Toolbelt tactical tabletop companion"
+  "description": "Adventurista Toolbelt tactical tabletop companion",
+  "main": "electron/main.mjs"
 }
